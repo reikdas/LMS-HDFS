@@ -1,0 +1,9 @@
+*.class
+*.log
+headers/
+project/
+target/
+.bsp/
+.idea/
+
+hs_err_pid*
