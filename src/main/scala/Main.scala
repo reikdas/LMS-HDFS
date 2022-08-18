@@ -9,7 +9,7 @@ import scala.collection.mutable.ListBuffer
 import sys.process._
 
 trait FileOps extends ScannerOps with LibFunction {
-  def read(fd: Rep[Int], buf: Rep[Array[Char]], size: Rep[Long]): Rep[Int] = libFunction[Int]("read", Unwrap(fd), Unwrap(buf), Unwrap(size))(Seq(0, 1, 2), Seq(), Set(), Adapter.CTRL)
+  def read(fd: Rep[Int], buf: Rep[Array[Char]], size: Rep[Long]): Rep[Int] = libFunction[Int]("read", Unwrap(fd), Unwrap(buf), Unwrap(size))(Seq(0, 1, 2), Seq(1), Set())
 }
 
 
@@ -88,8 +88,7 @@ object Main {
   }
 
   def main(args: Array[String]): Unit = {
-    val snippet = new DslDriverC[Int, Unit] with FileOps {
-      q =>
+    val snippet = new DslDriverC[Int, Unit] with FileOps { q =>
       override val codegen = new DslGenC with CCodeGenLibFunction {
         val IR: q.type = q
       }
@@ -98,17 +97,44 @@ object Main {
       //val paths = List("foo.txt", "bar.txt")
 
       @virtualize
-      def snippet(dummy: Rep[Int]) = {
-        var count = 0L
+      def Mapper(buf: Rep[Array[Char]]): Rep[Int] = {
+        var count = 0
+        var i = 0
+        while (i < buf.length) {
+          if (buf(i) != ' ') count += 1
+          i += 1
+        }
+        count
+      }
+
+      @virtualize
+      def Reducer(counts: Rep[Array[Int]]): Rep[Long] = {
+        var total = 0L
+        var i = 0
+        while (i < counts.length) {
+          total += counts(i)
+        }
+        total
+      }
+
+
+      def HDFSExec[T: Manifest, U](filename: String, map: Rep[Array[Char]] => Rep[T], reduce: Rep[Array[T]] => Rep[U]): Rep[U] = {
+        val paths = GetPaths(filename)
+        val map_result = NewArray[T](paths.length)
         val buf = NewArray[Char](GetBlockLen() + 1)
         for (i <- 0 until paths.length: Range) {
           val block_num = open(paths(i))
           val size = filelen(block_num)
-          val toread = read(block_num, buf, size)
-          for (j <- 0 until toread) {
-            if (buf(j) != ' ') count += 1
-          }
+          read(block_num, buf, size)
+          map_result(i) = map(buf)
         }
+        reduce(map_result)
+      }
+
+
+      @virtualize
+      def snippet(dummy: Rep[Int]) = {
+        val count = HDFSExec("/1G.txt", Mapper, Reducer)
         println(count)
       }
     }
@@ -169,3 +195,4 @@ object Main {
     buf
     }*/
 }
+
