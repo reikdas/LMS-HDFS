@@ -82,6 +82,11 @@ object Main {
     nativepaths
   }
 
+  def GetBlockLen(): Int = {
+    val output = "hdfs getconf -confKey dfs.blocksize".!!
+    output.replace("\n", "").toInt
+  }
+
   def main(args: Array[String]): Unit = {
     val snippet = new DslDriverC[Int, Unit] with FileOps {
       q =>
@@ -89,13 +94,13 @@ object Main {
         val IR: q.type = q
       }
 
-      //val paths = GetPaths("/200M.txt")
-      val paths = List("foo.txt", "bar.txt")
+      val paths = GetPaths("/1G.txt")
+      //val paths = List("foo.txt", "bar.txt")
 
       @virtualize
       def snippet(dummy: Rep[Int]) = {
         var count = 0L
-        val buf = NewArray[Char](1000000000)
+        val buf = NewArray[Char](GetBlockLen() + 1)
         for (i <- 0 until paths.length: Range) {
           val block_num = open(paths(i))
           val size = filelen(block_num)
@@ -141,8 +146,7 @@ object Main {
 
   }
 
-  def GetBlockLen(): Long = {
-  }
+
 
   def read(fd: Int, buf: List[Char], start: Int, end: Int): Unit = {
 
