@@ -9,14 +9,14 @@ import scala.collection.mutable.ListBuffer
 import sys.process._
 
 trait FileOps extends ScannerOps with LibFunction {
-  def read(fd: Rep[Int], buf: Rep[Array[Char]], size: Rep[Long]): Rep[Int] = libFunction[Int]("read", Unwrap(fd), Unwrap(buf), Unwrap(size))(Seq(0, 1, 2), Seq(1), Set())
+  def read(fd: Rep[Int], buf: Rep[Array[Char]], size: Rep[Long]): Rep[Int] =
+    libFunction[Int]("read", Unwrap(fd), Unwrap(buf), Unwrap(size))(Seq(0, 1, 2), Seq(1), Set())
 }
 
-
-object Main {
-
+trait HDFSOps {
   def GetPaths(path: String): ListBuffer[String] = {
-    val basepath = "/home/reikdas/hdfs-data/datanode" // Change as required
+    val basepath =
+      "hdfs getconf -confKey dfs.datanode.data.dir".!!.replaceAll("\n", "")
     val result = "hdfs fsck %s -files -blocks -locations".format(path)
     val output = result.!!
     val lines = output.split("\n")
@@ -39,13 +39,16 @@ object Main {
       }
       if (flag && line.nonEmpty && count > 0) {
         if (words(0).nonEmpty) {
-          if (words(0).substring(0, words(0).length - 1).forall(Character.isDigit)) {
+          if (words(0)
+                .substring(0, words(0).length - 1)
+                .forall(Character.isDigit)) {
             if (words(0).substring(0, words(0).length - 1).toInt == count - 1) {
               count = count + 1
               val rawinfo = words(1).split(":")
               blocks_infos += rawinfo(1).substring(0, rawinfo(1).lastIndexOf("_"))
               dnodes_infos += rawinfo(0)
-              val stline = line.substring(line.indexOfSlice("DatanodeInfoWithStorage") - 1, line.size)
+              val stline =
+                line.substring(line.indexOfSlice("DatanodeInfoWithStorage") - 1, line.size)
               val rawparts = stline.split(" ")
               val ips = new ListBuffer[String]()
               for (part <- rawparts) {
@@ -68,10 +71,12 @@ object Main {
     }
 
     for (i <- blocks_infos.indices) {
-      val allpaths = getListOfFiles(new File(basepath + "/current/%s/current/finalized".format(dnodes_infos(i))))
+      val allpaths = getListOfFiles(
+        new File(basepath + "/current/%s/current/finalized".format(dnodes_infos(i))))
       var flag = 0
       for (j <- allpaths.indices) {
-        if (allpaths(j).toString.contains(blocks_infos(i)) && !allpaths(j).toString.contains(".meta") && flag == 0) {
+        if (allpaths(j).toString.contains(blocks_infos(i)) && !allpaths(j).toString
+              .contains(".meta") && flag == 0) {
           nativepaths += allpaths(j).toString
           flag = 1
         }
@@ -86,18 +91,41 @@ object Main {
     val output = "hdfs getconf -confKey dfs.blocksize".!!
     output.replace("\n", "").toInt
   }
+}
+
+abstract class MapReduce extends FileOps with HDFSOps {
+
+  def Mapper[T](buf: Rep[List[Char]]): Rep[T]
+
+  def Reducer[T, A](someList: Rep[Array[T]]): Rep[A]
+
+  def HDFSExec[T: Manifest, U](filename: String,
+                               map: Rep[Array[Char]] => Rep[T],
+                               reduce: Rep[Array[T]] => Rep[U]): Rep[U] = {
+    val paths = GetPaths(filename)
+    val map_result = NewArray[T](paths.length)
+    val buf = NewArray[Char](GetBlockLen() + 1)
+    for (i <- 0 until paths.length: Range) {
+      val block_num = open(paths(i))
+      val size = filelen(block_num)
+      read(block_num, buf, size)
+      map_result(i) = map(buf)
+    }
+    reduce(map_result)
+  }
+}
+
+object Main extends MapReduce {
 
   def main(args: Array[String]): Unit = {
-    val snippet = new DslDriverC[Int, Unit] with FileOps { q =>
+    val snippet = new DslDriverC[Int, Unit] with FileOps {
+      q =>
       override val codegen = new DslGenC with CCodeGenLibFunction {
         val IR: q.type = q
       }
 
-      val paths = GetPaths("/1G.txt")
-      //val paths = List("foo.txt", "bar.txt")
-
       @virtualize
-      def Mapper(buf: Rep[Array[Char]]): Rep[Int] = {
+      override def Mapper(buf: Rep[Array[Char]]): Rep[Int] = {
         var count = 0
         var i = 0
         while (i < buf.length) {
@@ -108,30 +136,15 @@ object Main {
       }
 
       @virtualize
-      def Reducer(counts: Rep[Array[Int]]): Rep[Long] = {
+      override def Reducer(counts: Rep[Array[Int]]): Rep[Long] = {
         var total = 0L
         var i = 0
         while (i < counts.length) {
           total += counts(i)
+          i += 1
         }
         total
       }
-
-
-      def HDFSExec[T: Manifest, U](filename: String, map: Rep[Array[Char]] => Rep[T], reduce: Rep[Array[T]] => Rep[U]): Rep[U] = {
-        val paths = GetPaths(filename)
-        val map_result = NewArray[T](paths.length)
-        val buf = NewArray[Char](GetBlockLen() + 1)
-        for (i <- 0 until paths.length: Range) {
-          val block_num = open(paths(i))
-          val size = filelen(block_num)
-          read(block_num, buf, size)
-          map_result(i) = map(buf)
-        }
-        reduce(map_result)
-      }
-
-
       @virtualize
       def snippet(dummy: Rep[Int]) = {
         val count = HDFSExec("/1G.txt", Mapper, Reducer)
@@ -141,8 +154,9 @@ object Main {
 
     println(snippet.code)
   }
+}
 
-  /*
+/*
 
   def verifyChecksum(blocks: ListBuffer[String], filename: String): Unit = {
 
@@ -166,33 +180,4 @@ object Main {
 
   val filename = "/1G.txt"
   val blocks = GetPaths(filename)
-  verifyChecksum(blocks, filename)
-
-  def HDFSfilelen(filename: String): Long = {
-
-  }
-
-
-
-  def read(fd: Int, buf: List[Char], start: Int, end: Int): Unit = {
-
-  }
-
-  def HDFSread(filename: String, start: Int, buflen: Long): Rep[List[Char]] = {
-    val blockpaths = GetBlocks(filename)
-    val filesize: Long = HDFSfilelen(filename)
-    val blocksize: Long = GetBlockLen()
-    val blocknum: Int = filesize/blocksize
-    var pos: Rep[Int] = var_new(filesize % blocksize)
-    val buf: Rep[List[Char]] = NewArray[Char](buflen)
-    var readsize: Rep[Long] = var_new(0: Long)
-    var remaining: Rep[Long] = var_new(buflen)
-    while (true) {
-      val fd: Rep[Int]  = open(paths(i))
-      if (remaining > )
-      read(fd, buf, start)
-    }
-    buf
-    }*/
-}
-
+  verifyChecksum(blocks, filename)*/
