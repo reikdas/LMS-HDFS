@@ -1,6 +1,6 @@
 import lms.core.stub._
 import lms.macros.SourceContext
-import lms.core.{Backend, virtualize}
+import lms.core.{virtualize, Backend}
 import lms.thirdparty.{CCodeGenLibFunction, LibFunction, ScannerOps}
 
 import java.io.File
@@ -88,66 +88,72 @@ trait HDFSOps {
   }
 
   def GetBlockLen(): Int = {
-    val output = "hdfs getconf -confKey dfs.blocksize".!!
+    val output = "/usr/lib/hadoop-3.3.2/bin/hdfs getconf -confKey dfs.blocksize".!!
     output.replace("\n", "").toInt
   }
 }
 
-abstract class MapReduce extends FileOps with HDFSOps {
+trait MapReduceOps extends FileOps with HDFSOps {
 
-  def Mapper[T](buf: Rep[List[Char]]): Rep[T]
+  abstract class MapReduceComputation[MapperResult: Manifest, ReducerResult] {
+    def Mapper(buf: Rep[Array[Char]]): Rep[MapperResult]
 
-  def Reducer[T, A](someList: Rep[Array[T]]): Rep[A]
+    def Reducer(someList: Rep[Array[MapperResult]]): Rep[ReducerResult]
+  }
 
-  def HDFSExec[T: Manifest, U](filename: String,
-                               map: Rep[Array[Char]] => Rep[T],
-                               reduce: Rep[Array[T]] => Rep[U]): Rep[U] = {
+  def HDFSExec[MapperResult: Manifest, ReducerResult](
+      filename: String,
+      mapReduce: MapReduceComputation[MapperResult, ReducerResult]) = {
     val paths = GetPaths(filename)
-    val map_result = NewArray[T](paths.length)
+    val map_result = NewArray[MapperResult](paths.length)
     val buf = NewArray[Char](GetBlockLen() + 1)
     for (i <- 0 until paths.length: Range) {
       val block_num = open(paths(i))
       val size = filelen(block_num)
       read(block_num, buf, size)
-      map_result(i) = map(buf)
+      map_result(i) = mapReduce.Mapper(buf)
     }
-    reduce(map_result)
+    mapReduce.Reducer(map_result)
   }
 }
 
-object Main extends MapReduce {
+trait MyFoo extends MapReduceOps {
+  @virtualize
+  case class MyComputation() extends MapReduceComputation[Int, Long] {
+    override def Mapper(buf: Rep[Array[Char]]): Rep[Int] = {
+      var count = 0
+      var i = 0
+      while (i < buf.length) {
+        if (buf(i) != ' ') count = count + 1
+        i += 1
+      }
+      count
+    }
+
+    override def Reducer(counts: Rep[Array[Int]]): Rep[Long] = {
+      var total = 0L
+      var i = 0
+      while (i < counts.length) {
+        total += counts(i)
+        i += 1
+      }
+      total
+    }
+  }
+}
+
+object Main {
 
   def main(args: Array[String]): Unit = {
-    val snippet = new DslDriverC[Int, Unit] with FileOps {
+    val snippet = new DslDriverC[Int, Unit] with MyFoo {
       q =>
       override val codegen = new DslGenC with CCodeGenLibFunction {
         val IR: q.type = q
       }
 
       @virtualize
-      override def Mapper(buf: Rep[Array[Char]]): Rep[Int] = {
-        var count = 0
-        var i = 0
-        while (i < buf.length) {
-          if (buf(i) != ' ') count += 1
-          i += 1
-        }
-        count
-      }
-
-      @virtualize
-      override def Reducer(counts: Rep[Array[Int]]): Rep[Long] = {
-        var total = 0L
-        var i = 0
-        while (i < counts.length) {
-          total += counts(i)
-          i += 1
-        }
-        total
-      }
-      @virtualize
       def snippet(dummy: Rep[Int]) = {
-        val count = HDFSExec("/1G.txt", Mapper, Reducer)
+        val count = HDFSExec("/1G.txt", MyComputation())
         println(count)
       }
     }
