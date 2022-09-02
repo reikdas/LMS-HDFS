@@ -14,6 +14,19 @@ trait FileOps extends ScannerOps with LibFunction {
     libFunction[Int]("read", Unwrap(fd), Unwrap(buf), Unwrap(size))(Seq(0, 1, 2), Seq(1), Set())
 }
 
+trait LMSMore extends LibFunction with ArrayOps {
+  def strcmp(str1: Rep[String], str2: Rep[String]): Rep[Int] =
+    libFunction[Int]("strcmp", Unwrap(str1), Unwrap(str2))(Seq(0, 1), Seq(), Set())
+
+  case class RepArray[T: Manifest](value: Rep[Array[T]], length: Rep[Int]) {
+    def apply(idx: Rep[Int]): Rep[T] = value(idx)
+
+    def update(idx: Rep[Int], something: Rep[T]): Unit = {
+      value(idx) = something
+    }
+  }
+}
+
 trait HDFSOps {
   def GetPaths(path: String): ListBuffer[String] = {
     val basepath =
@@ -95,19 +108,19 @@ trait HDFSOps {
 }
 
 @virtualize
-trait MapReduceOps extends FileOps with HDFSOps with ListOps with TupleOps {
+trait MapReduceOps extends FileOps with HDFSOps with ListOps with TupleOps with LMSMore {
 
-  abstract class MapReduceComputation[KeyType: Manifest, ValueType: Manifest, ReducerResult] {
-    def Mapper(buf: Rep[Array[Char]]): Rep[List[Tuple2[KeyType, ValueType]]]
+  abstract class MapReduceComputation[KeyType: Manifest, ValueType: Manifest, ReducerResult: Manifest] {
+    def Mapper(buf: Rep[Array[Char]]): RepArray[Tuple2[KeyType, ValueType]]
 
-    def Reducer(someArr: Rep[Array[Tuple2[KeyType, ValueType]]]): Rep[ReducerResult]
+    def Reducer(l: Rep[Array[Tuple2[KeyType, ValueType]]]): Rep[ReducerResult]
   }
 
-  def sort[KeyType: Manifest: Ordering, ValueType:Manifest]
-  (arr: Rep[Array[Tuple2[KeyType, ValueType]]]): Rep[Array[Tuple2[KeyType, ValueType]]] = {
+  def sort[KeyType: Manifest : Ordering, ValueType: Manifest]
+  (arr: RepArray[Tuple2[KeyType, ValueType]]): RepArray[Tuple2[KeyType, ValueType]] = {
     for (i <- 0 until (arr.length - 1)) {
       var min_idx = i
-      for (j <- (i+1) until arr.length) {
+      for (j <- (i + 1) until arr.length) {
         if (arr(j)._1 < arr(min_idx)._1) min_idx = j
       }
       val temp = arr(min_idx)
@@ -118,64 +131,88 @@ trait MapReduceOps extends FileOps with HDFSOps with ListOps with TupleOps {
   }
 
   def mergeSort[KeyType: Manifest: Ordering, ValueType: Manifest]
-  (arrs: Rep[List[Array[Tuple2[KeyType, ValueType]]]]): Rep[Array[Tuple2[KeyType, ValueType]]] = {
-    var mergedList: Rep[List[Tuple2[KeyType, ValueType]]] = List()
-    for (i <- 0 until arrs.size) {
-      for (j <- 0 until arrs(i).length) {
-        mergedList = arrs(i)(j)::mergedList
-      }
-    }
-    sort(mergedList.toArray)
+  (arr: Rep[Array[Tuple2[KeyType, ValueType]]], indexes: Rep[Array[Int]]): Rep[Array[Tuple2[KeyType, ValueType]]] = {
+    arr
+    //???
   }
 
-  def HDFSExec[KeyType: Manifest: Ordering, ValueType: Manifest, ReducerResult](
+  def HDFSExec[KeyType: Manifest: Ordering, ValueType: Manifest, ReducerResult: Manifest](
       filename: String,
       mapReduce: MapReduceComputation[KeyType, ValueType, ReducerResult]) = {
     val paths = GetPaths(filename)
     val buf = NewArray[Char](GetBlockLen() + 1)
-    var map_result: Rep[List[List[Tuple2[KeyType, ValueType]]]] = List()
-    for (i <- 0 until paths.length: Range) {
+    // Run first mapper independently to calculate length of final arr
+    val block_num_f = open(paths.head)
+    val size_f = filelen(block_num_f)
+    val out_f = read(block_num_f, buf, size_f)
+    println(out_f) // FIXME: Print only to force read not to be DCE'd
+    val arr_f = sort(mapReduce.Mapper(buf))
+    val arr = NewArray[Tuple2[KeyType, ValueType]](arr_f.length * paths.length * 1.5) // Array storing all words
+    val ends = NewArray[Int](paths.length) // Array storing last indices of each mapper result in arr
+    for (i <- 0 until arr_f.length) {
+      arr(i) = arr_f(i)
+    }
+    ends(0) = arr_f.length
+    // Run mapper on all the other blocks
+    for (i <- 1 until paths.length: Range) {
       val block_num = open(paths(i))
       val size = filelen(block_num)
-      read(block_num, buf, size)
-      map_result = mapReduce.Mapper(buf) :: map_result
+      val out = read(block_num, buf, size)
+      println(out) // FIXME: Print only to force read not to be DCE'd
+      val wordlist = sort(mapReduce.Mapper(buf))
+      for (j <- 0 until wordlist.length) {
+        arr(ends(i-1) + j) = wordlist(j)
+      }
+      ends(i) = wordlist.length
     }
-    map_result(0)(0)._2
-    /*val flattenedarr: Rep[Array[Tuple2[KeyType, ValueType]]] = mergeSort(map_result)
-    var start = 0
-    while (start < (flattenedarr.length - 1)) {
-      var end = start + 1
-      val key = flattenedarr(start)._1
-      while (flattenedarr(end)._1 == key && end < flattenedarr.length) end = end + 1
-      println(mapReduce.Reducer(flattenedarr.slice(start, end)))
-      start = end
-    }*/
+    val msort_arr = mergeSort(arr, ends)
+    var idx_start = 0
+    val logical_end = ends(paths.length - 1)
+    while (idx_start < logical_end) {
+      var idx_end = idx_start + 1
+      val key = msort_arr(idx_start)._1
+      while (msort_arr(idx_end)._1 == key && idx_end <= logical_end) idx_end = idx_end + 1
+      println(key)
+      println(mapReduce.Reducer(msort_arr.slice(idx_start, idx_end)))
+      idx_start = idx_end
+    }
   }
 }
 
 trait MyFoo extends MapReduceOps with ListOps with TupleOps with ArrayOps {
   @virtualize
-  case class MyComputation() extends MapReduceComputation[String, Int, Tuple2[String, Int]] {
+  case class MyComputation() extends MapReduceComputation[String, Int, Int] {
 
-    override def Mapper(buf: Rep[Array[Char]]): Rep[List[Tuple2[String, Int]]] = {
-      var wordlist: Rep[List[Tuple2[String, Int]]] = List()
+    override def Mapper(buf: Rep[Array[Char]]): RepArray[Tuple2[String, Int]] = {
       var start = 0
+      var count = 0
       while (start < (buf.length - 1)) {
         while (buf(start) == ' ' || buf(start) == '\n' && start < (buf.length - 1)) start = start + 1
         var end = start + 1
         while ((buf(end) != ' ' || buf(end) != '\n') && (end < buf.length)) end = end + 1
-        wordlist = Tuple2[String, Int](buf.slice(start, end).ArrayOfCharToString(), 1)::wordlist
+        count = count + 1
         start = end
       }
-      wordlist
+      val wordlist = NewArray[Tuple2[String, Int]](count)
+      start = 0
+      var idx = 0
+      while (start < (buf.length - 1)) {
+        while (buf(start) == ' ' || buf(start) == '\n' && start < (buf.length - 1)) start = start + 1
+        var end = start + 1
+        while ((buf(end) != ' ' || buf(end) != '\n') && (end < buf.length)) end = end + 1
+        wordlist(idx) = Tuple2[String, Int](buf.slice(start, end).ArrayOfCharToString(), 1)
+        start = end
+        idx = idx + 1
+      }
+      RepArray(wordlist, count)
     }
 
-    override def Reducer(arr: Rep[Array[Tuple2[String, Int]]]): Rep[Tuple2[String, Int]] = {
+    override def Reducer(l: Rep[Array[Tuple2[String, Int]]]): Rep[Int] = {
       var total = 0
-      for (i <- 0 until arr.length) {
-        total = total + arr(i)._2
+      for (i <- 0 until l.length) {
+        total = total + l(i)._2
       }
-      Tuple2[String, Int](arr(0)._1, total)
+      total
     }
   }
 }
@@ -191,11 +228,14 @@ object Main {
 
       @virtualize
       def snippet(dummy: Rep[Int]) = {
-        val count = HDFSExec("/1G.txt", MyComputation())
-        println(count)
+        val res = HDFSExec("/mr_input/wordcount/wc01.txt", MyComputation())
+        /*for (i <- 0 until res.length: Rep[Range]) {
+          println(res(i)._1)
+          println(res(i)._2)
+        }*/
+        println(res)
       }
     }
-
     println(snippet.code)
   }
 }
