@@ -21,6 +21,8 @@ trait LMSMore extends ArrayOps {
     def update(idx: Rep[Int], something: Rep[T]): Unit = {
       value(idx) = something
     }
+
+    def free = value.free
   }
 }
 
@@ -128,6 +130,7 @@ trait MapReduceOps extends FileOps with ScannerOps with HDFSOps with LMSMore {
       for (j <- 0 until 26: Range) {
         mapperout((i * 26) + j) = charmap(j)
       }
+      charmap.free
     }
     val reducearg = NewArray[ValueType](paths.length)
     for (i <- 0 until 26: Range) {
@@ -136,6 +139,9 @@ trait MapReduceOps extends FileOps with ScannerOps with HDFSOps with LMSMore {
       }
       res(i) = mapReduce.Reducer(reducearg)
     }
+    buf.free
+    mapperout.free
+    reducearg.free
     res
   }
 }
@@ -174,16 +180,18 @@ object Main {
       q =>
       override val codegen = new DslGenC with CCodeGenLibFunction {
         registerHeader("/home/reikdas/Research/lms-clean/src/main/resources/headers/", "\"scanner_header.h\"")
+        registerHeader("<stdbool.h>")
         val IR: q.type = q
       }
 
 
       @virtualize
       def snippet(dummy: Rep[Int]) = {
-        val res = HDFSExec("/mr_input/wordcount/wc01.txt", MyComputation())
+        val res = HDFSExec("/1G.txt", MyComputation())
         for (i <- 0 until 26: Range) {
           printf("%c = %d\n", (i+65), res(i))
         }
+        res.free
       }
     }
     println(snippet.code)
