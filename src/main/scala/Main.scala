@@ -173,7 +173,8 @@ trait MapReduceOps extends FileOps with ScannerOps with HDFSOps with MPIOps {
       for (i <- 0 until chars_per_thread: Rep[Range]) {
         val tag = (rank * chars_per_thread) + i
         for (j <- 0 until paths.length - remaining_map) {
-          mpi_rec(reducearg(j), 1, mpi_integer, j, tag, mpi_comm_world)
+          val src = j/blocks_per_thread
+          mpi_rec(reducearg(j), 1, mpi_integer, src, tag, mpi_comm_world)
         }
         for (j <- 0 until remaining_map: Rep[Range]) {
           mpi_rec(reducearg(paths.length - remaining_map + j), 1, mpi_integer, j, tag, mpi_comm_world)
@@ -182,7 +183,8 @@ trait MapReduceOps extends FileOps with ScannerOps with HDFSOps with MPIOps {
       }
       if (rank < remaining_red) {
         for (i <- 0 until paths.length - remaining_map) {
-          mpi_rec(reducearg(i), 1, mpi_integer, i, rank + limit, mpi_comm_world)
+          val src = i/blocks_per_thread
+          mpi_rec(reducearg(i), 1, mpi_integer, src, rank + limit, mpi_comm_world)
         }
         for (i <- 0 until remaining_map: Rep[Range]) {
           mpi_rec(reducearg(paths.length - remaining_map + i), 1, mpi_integer, i, rank + limit, mpi_comm_world)
@@ -247,7 +249,6 @@ object Main {
       q =>
       override val codegen = new DslGenC with CCodeGenLibFunction with CCodeGenMPI with CCodeGenCMacro {
         registerHeader("/home/reikdas/Research/lms-clean/src/main/resources/headers/", "\"scanner_header.h\"")
-        registerHeader("<stdbool.h>")
         val IR: q.type = q
       }
 
