@@ -1,7 +1,7 @@
 import lms.core.stub._
 import lms.macros.SourceContext
 import lms.core.virtualize
-import lms.thirdparty.{CCodeGenCMacro, CCodeGenLibFunction, CCodeGenMPI, LibFunction, MPIOps, ScannerOps}
+import lms.thirdparty.{CCodeGenLibFunction, LibFunction, ScannerOps}
 import lms.collection.mutable.ArrayOps
 
 import java.io.File
@@ -10,7 +10,20 @@ import sys.process._
 
 trait FileOps extends LibFunction {
   def read(fd: Rep[Int], buf: Rep[Array[Char]], size: Rep[Long]): Rep[Int] =
-    libFunction[Int]("read", Unwrap(fd), Unwrap(buf), Unwrap(size))(Seq[Int](), Seq(1), Set())
+    libFunction[Int]("read", Unwrap(fd), Unwrap(buf), Unwrap(size))(Seq(0, 1, 2), Seq(1), Set())
+}
+
+trait LMSMore extends ArrayOps {
+
+  case class RepArray[T: Manifest](value: Rep[Array[T]], length: Rep[Int]) {
+    def apply(idx: Rep[Int]): Rep[T] = value(idx)
+
+    def update(idx: Rep[Int], something: Rep[T]): Unit = {
+      value(idx) = something
+    }
+
+    def free = value.free
+  }
 }
 
 trait HDFSOps {
@@ -94,103 +107,41 @@ trait HDFSOps {
 }
 
 @virtualize
-trait MapReduceOps extends FileOps with ScannerOps with HDFSOps with MPIOps {
+trait MapReduceOps extends FileOps with ScannerOps with HDFSOps with LMSMore {
 
   abstract class MapReduceComputation[ValueType: Manifest, ReducerResult: Manifest] {
-    def Mapper(buf: Rep[Array[Char]], size: Rep[Int]): Rep[Array[ValueType]]
+    def Mapper(buf: RepArray[Char]): RepArray[ValueType]
 
     def Reducer(l: Rep[Array[ValueType]]): Rep[ReducerResult]
-  }
-
-  def ListToArr(l: ListBuffer[String]): Rep[Array[String]] = {
-    val arr = NewArray[String](l.size)
-    for (i <- 0 until l.size: Range) {
-      arr(i) = l(i)
-    }
-    arr
   }
 
   def HDFSExec[ValueType: Manifest, ReducerResult: Manifest](
       filename: String,
       mapReduce: MapReduceComputation[ValueType, ReducerResult]): Rep[Array[ReducerResult]] = {
-    val paths = ListToArr(GetPaths(filename))
-
-    // MPI initialize
-    var world_size = 0
-    var rank = 0
-    mpi_init()
-    mpi_comm_size(mpi_comm_world, world_size)
-    mpi_comm_rank(mpi_comm_world, rank)
-
-    // Allocate mappers and reducers to processes
-    if (world_size > paths.length) world_size = paths.length
-    val blocks_per_thread = paths.length / world_size
-    /*var remaining_map = blocks_per_thread
-    if (paths.length % world_size != 0) remaining_map = paths.length % world_size*/
-    val chars_per_thread = 26 / world_size
-    /*var remaining_red = chars_per_thread
-    if (26 % world_size != 0) remaining_red = 26 % world_size*/
-
-    val limit = (26 / chars_per_thread) * chars_per_thread
-
-    // Dont need more processes than world_size
-    if (rank < world_size) {
-      val buf = NewArray[Char](GetBlockLen() + 1)
-      for (i <- 0 until blocks_per_thread) {
-        val idx = (rank * blocks_per_thread) + i
-        val block_num = open(paths(idx))
-        val size = filelen(block_num)
-        read(block_num, buf, size)
-        val charmap = mapReduce.Mapper(buf, buf.length)
-
-        for (j <- 0 until limit: Rep[Range]) {
-          val dest = (j / chars_per_thread)
-          mpi_send(charmap(j), 1, mpi_integer, dest, j, mpi_comm_world)
-        }
-        for (j <- 0 until (26 % chars_per_thread): Rep[Range]) {
-          mpi_send(charmap(limit + j), 1, mpi_integer, j, j+limit, mpi_comm_world)
-        }
-        charmap.free
-      }
-
-      // Reducer
-      // FIXME: Handle remaining src after modulus
-      val reducearg = NewArray[ValueType](paths.length)
-      for (i <- 0 until chars_per_thread: Rep[Range]) {
-        val tag = (rank * chars_per_thread) + i
-        for (j <- 0 until paths.length) {
-          val src = j // FIXME: When num_procs != num_blocks
-          mpi_rec(reducearg(j), 1, mpi_integer, src, tag, mpi_comm_world)
-        }
-        mpi_send(mapReduce.Reducer(reducearg), 1, mpi_integer, 0, tag, mpi_comm_world)
-      }
-      if (rank <= ((26 % chars_per_thread) - 1)) {
-        for (i <- 0 until paths.length) {
-          mpi_rec(reducearg(i), 1, mpi_integer, i, rank + limit, mpi_comm_world)
-        }
-        mpi_send(mapReduce.Reducer(reducearg), 1, mpi_integer, 0, rank + limit, mpi_comm_world)
-      }
-      buf.free
-    }
-
-    // Aggregate on node 0
-    // FIXME: Handle remaining aggregation after modulus
+    val paths = GetPaths(filename)
+    val buf = NewArray[Char](GetBlockLen() + 1)
+    val mapperout = NewArray[ValueType](26 * paths.length)
     val res = NewArray0[ReducerResult](26)
-    if (rank == 0) {
-      for (i <- 0 until limit: Rep[Range]) {
-        mpi_rec(res(i), 1, mpi_integer, i/chars_per_thread, i, mpi_comm_world)
+    for (i <- 0 until paths.length: Range) {
+      val block_num = open(paths(i))
+      val size = filelen(block_num)
+      val out = read(block_num, buf, size)
+      val charmap = mapReduce.Mapper(RepArray(buf, out))
+      for (j <- 0 until 26: Range) {
+        mapperout((i * 26) + j) = charmap(j)
       }
-      for (i <- 0 until (26 % chars_per_thread): Rep[Range]) {
-        mpi_rec(res(limit + i), 1, mpi_integer, i, limit + i, mpi_comm_world)
-      }
-      for (i <- 0 until 26: Rep[Range]) {
-        printf("%c = %d\n", (i + 65), res(i))
-      }
+      charmap.free
     }
-
-    // Finish MPI stuff
-    mpi_finalize()
-    paths.free
+    val reducearg = NewArray[ValueType](paths.length)
+    for (i <- 0 until 26: Range) {
+      for (j <- 0 until paths.length: Range) {
+        reducearg(j) = mapperout((j*26) + i)
+      }
+      res(i) = mapReduce.Reducer(reducearg)
+    }
+    buf.free
+    mapperout.free
+    reducearg.free
     res
   }
 }
@@ -199,9 +150,9 @@ trait MyFoo extends MapReduceOps with ArrayOps {
   @virtualize
   case class MyComputation() extends MapReduceComputation[Int, Int] {
 
-    override def Mapper(buf: Rep[Array[Char]], size: Rep[Int]): Rep[Array[Int]] = {
+    override def Mapper(buf: RepArray[Char]): RepArray[Int] = {
       val arr = NewArray0[Int](26)
-      for (i <- 0 until size: Rep[Range]) {
+      for (i <- 0 until buf.length) {
         val c = buf(i).toInt
         if (c >= 65 && c <= 90) {
           arr(c - 65) += 1
@@ -209,7 +160,7 @@ trait MyFoo extends MapReduceOps with ArrayOps {
           arr(c - 97) += 1
         }
       }
-      arr
+      RepArray(arr, 26)
     }
 
     override def Reducer(l: Rep[Array[Int]]): Rep[Int] = {
@@ -227,7 +178,7 @@ object Main {
   def main(args: Array[String]): Unit = {
     val snippet = new DslDriverC[Int, Unit] with MyFoo {
       q =>
-      override val codegen = new DslGenC with CCodeGenLibFunction with CCodeGenMPI with CCodeGenCMacro {
+      override val codegen = new DslGenC with CCodeGenLibFunction {
         registerHeader("/home/reikdas/Research/lms-clean/src/main/resources/headers/", "\"scanner_header.h\"")
         registerHeader("<stdbool.h>")
         val IR: q.type = q
@@ -237,7 +188,9 @@ object Main {
       @virtualize
       def snippet(dummy: Rep[Int]) = {
         val res = HDFSExec("/1G.txt", MyComputation())
-
+        for (i <- 0 until 26: Range) {
+          printf("%c = %d\n", (i+65), res(i))
+        }
         res.free
       }
     }
