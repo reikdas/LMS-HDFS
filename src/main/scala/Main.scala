@@ -125,14 +125,13 @@ trait MapReduceOps extends FileOps with ScannerOps with HDFSOps with MPIOps {
     // Allocate mappers and reducers to processes
     if (world_size > paths.length) world_size = paths.length
     val blocks_per_thread = paths.length / world_size
-    var remaining_map = 0
-    if (paths.length % world_size != 0) remaining_map = paths.length % world_size
+    /*var remaining_map = blocks_per_thread
+    if (paths.length % world_size != 0) remaining_map = paths.length % world_size*/
     val chars_per_thread = 26 / world_size
+    /*var remaining_red = chars_per_thread
+    if (26 % world_size != 0) remaining_red = 26 % world_size*/
 
-    val limit = (26 / world_size) * world_size
-
-    val foo: Rep[Int] = world_size
-    val remaining_red = 26 % foo
+    val limit = (26 / chars_per_thread) * chars_per_thread
 
     // Dont need more processes than world_size
     if (rank < world_size) {
@@ -143,49 +142,31 @@ trait MapReduceOps extends FileOps with ScannerOps with HDFSOps with MPIOps {
         val size = filelen(block_num)
         read(block_num, buf, size)
         val charmap = mapReduce.Mapper(buf, buf.length)
+
         for (j <- 0 until limit: Rep[Range]) {
-          val dest = j / chars_per_thread
+          val dest = (j / chars_per_thread)
           mpi_send(charmap(j), 1, mpi_integer, dest, j, mpi_comm_world)
         }
-        for (j <- 0 until remaining_red: Rep[Range]) {
+        for (j <- 0 until (26 % chars_per_thread): Rep[Range]) {
           mpi_send(charmap(limit + j), 1, mpi_integer, j, j+limit, mpi_comm_world)
-        }
-        charmap.free
-      }
-      if (rank < remaining_map) {
-        val idx = ((paths.length / world_size) * world_size) + rank
-        val block_num = open(paths(idx))
-        val size = filelen(block_num)
-        read(block_num, buf, size)
-        val charmap = mapReduce.Mapper(buf, buf.length)
-        for (j <- 0 until limit: Rep[Range]) {
-          val dest = j / chars_per_thread
-          mpi_send(charmap(j), 1, mpi_integer, dest, j, mpi_comm_world)
-        }
-        for (j <- 0 until remaining_red: Rep[Range]) {
-          mpi_send(charmap(limit + j), 1, mpi_integer, j, j + limit, mpi_comm_world)
         }
         charmap.free
       }
 
       // Reducer
+      // FIXME: Handle remaining src after modulus
       val reducearg = NewArray[ValueType](paths.length)
       for (i <- 0 until chars_per_thread: Rep[Range]) {
         val tag = (rank * chars_per_thread) + i
-        for (j <- 0 until paths.length - remaining_map) {
-          mpi_rec(reducearg(j), 1, mpi_integer, j, tag, mpi_comm_world)
-        }
-        for (j <- 0 until remaining_map: Rep[Range]) {
-          mpi_rec(reducearg(paths.length - remaining_map + j), 1, mpi_integer, j, tag, mpi_comm_world)
+        for (j <- 0 until paths.length) {
+          val src = j // FIXME: When num_procs != num_blocks
+          mpi_rec(reducearg(j), 1, mpi_integer, src, tag, mpi_comm_world)
         }
         mpi_send(mapReduce.Reducer(reducearg), 1, mpi_integer, 0, tag, mpi_comm_world)
       }
-      if (rank < remaining_red) {
-        for (i <- 0 until paths.length - remaining_map) {
+      if (rank <= ((26 % chars_per_thread) - 1)) {
+        for (i <- 0 until paths.length) {
           mpi_rec(reducearg(i), 1, mpi_integer, i, rank + limit, mpi_comm_world)
-        }
-        for (i <- 0 until remaining_map: Rep[Range]) {
-          mpi_rec(reducearg(paths.length - remaining_map + i), 1, mpi_integer, i, rank + limit, mpi_comm_world)
         }
         mpi_send(mapReduce.Reducer(reducearg), 1, mpi_integer, 0, rank + limit, mpi_comm_world)
       }
@@ -193,12 +174,13 @@ trait MapReduceOps extends FileOps with ScannerOps with HDFSOps with MPIOps {
     }
 
     // Aggregate on node 0
+    // FIXME: Handle remaining aggregation after modulus
     val res = NewArray0[ReducerResult](26)
     if (rank == 0) {
       for (i <- 0 until limit: Rep[Range]) {
         mpi_rec(res(i), 1, mpi_integer, i/chars_per_thread, i, mpi_comm_world)
       }
-      for (i <- 0 until remaining_red: Rep[Range]) {
+      for (i <- 0 until (26 % chars_per_thread): Rep[Range]) {
         mpi_rec(res(limit + i), 1, mpi_integer, i, limit + i, mpi_comm_world)
       }
       for (i <- 0 until 26: Rep[Range]) {
