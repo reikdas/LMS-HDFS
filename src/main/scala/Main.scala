@@ -4,6 +4,10 @@ import lms.core.virtualize
 import lms.thirdparty.{CCodeGenLibFunction, LibFunction, ScannerOps}
 import lms.collection.mutable.ArrayOps
 
+import flare.{Config, FlareBackend, FlareOps}
+import flare.debug.LOGLevel
+import flare.collection.BufferOps
+
 import java.io.File
 import scala.collection.mutable.ListBuffer
 import sys.process._
@@ -13,7 +17,7 @@ trait FileOps extends LibFunction {
     libFunction[Int]("read", Unwrap(fd), Unwrap(buf), Unwrap(size))(Seq(0, 1, 2), Seq(1), Set())
 }
 
-trait LMSMore extends ArrayOps {
+trait LMSMore extends BufferOps {
 
   case class RepArray[T: Manifest](value: Rep[Array[T]], length: Rep[Int]) {
     def apply(idx: Rep[Int]): Rep[T] = value(idx)
@@ -24,6 +28,37 @@ trait LMSMore extends ArrayOps {
 
     def free = value.free
   }
+
+  case class StructArr(arr: FlatBuffer[Struct], count: Long)
+
+  def ListToArr(l: ListBuffer[String]): Rep[Array[String]] = {
+    val arr = NewArray[String](l.size)
+    for (i <- 0 until l.size: Range) {
+      arr(i) = l(i)
+    }
+    arr
+  }
+
+  def sort[KeyType: Manifest : Ordering, ValueType: Manifest]
+  (arr: StructArr): StructArr = {
+    for (i <- 0 until (arr.length - 1)) {
+      var min_idx = i
+      for (j <- (i + 1) until arr.length) {
+        if (arr(j)._1 < arr(min_idx)._1) min_idx = j
+      }
+      val temp = arr(min_idx)
+      arr(min_idx) = arr(i)
+      arr(i) = temp
+    }
+    arr
+  }
+
+  def mergeSort[KeyType: Manifest : Ordering, ValueType: Manifest]
+  (arr: Rep[Array[Tuple2[KeyType, ValueType]]], indexes: Rep[Array[Int]]): Rep[Array[Tuple2[KeyType, ValueType]]] = {
+    arr
+    //???
+  }
+
 }
 
 trait HDFSOps {
@@ -109,17 +144,27 @@ trait HDFSOps {
 @virtualize
 trait MapReduceOps extends FileOps with ScannerOps with HDFSOps with LMSMore {
 
-  abstract class MapReduceComputation[ValueType: Manifest, ReducerResult: Manifest] {
-    def Mapper(buf: RepArray[Char]): RepArray[ValueType]
+  abstract class MapReduceComputation[KeyType: Manifest, ValueType: Manifest, ReducerResult: Manifest] {
+
+    def Mapper(buf: Rep[Array[Char]]): StructArr
 
     def Reducer(l: Rep[Array[ValueType]]): Rep[ReducerResult]
   }
 
-  def HDFSExec[ValueType: Manifest, ReducerResult: Manifest](
+  def HDFSExec[KeyType: Manifest, ValueType: Manifest, ReducerResult: Manifest](
       filename: String,
-      mapReduce: MapReduceComputation[ValueType, ReducerResult]): Rep[Array[ReducerResult]] = {
-    val paths = GetPaths(filename)
+      mapReduce: MapReduceComputation[KeyType, ValueType, ReducerResult]): Rep[Array[ReducerResult]] = {
+    val paths = ListToArr(GetPaths(filename))
     val buf = NewArray[Char](GetBlockLen() + 1)
+    // Run first mapper independently to calculate length of final arr
+    val block_num_f = open(paths(0))
+    val size_f = filelen(block_num_f)
+    val out_f = read(block_num_f, buf, size_f)
+    val arr_f = sort(mapReduce.Mapper(buf))
+    val schema = ???
+    val arr = Buffer.flat(schema, 1, buf.length)
+
+
     val mapperout = NewArray[ValueType](26 * paths.length)
     val res = NewArray0[ReducerResult](26)
     for (i <- 0 until paths.length: Range) {
@@ -146,21 +191,24 @@ trait MapReduceOps extends FileOps with ScannerOps with HDFSOps with LMSMore {
   }
 }
 
-trait MyFoo extends MapReduceOps with ArrayOps {
+trait MyFoo extends MapReduceOps with ArrayOps with FlareOps {
   @virtualize
-  case class MyComputation() extends MapReduceComputation[Int, Int] {
+  case class MyComputation() extends MapReduceComputation[String, Int, Int] {
 
-    override def Mapper(buf: RepArray[Char]): RepArray[Int] = {
-      val arr = NewArray0[Int](26)
-      for (i <- 0 until buf.length) {
-        val c = buf(i).toInt
-        if (c >= 65 && c <= 90) {
-          arr(c - 65) += 1
-        } else if (c >= 97 && c <= 122) {
-          arr(c - 97) += 1
-        }
+    override def Mapper(buf: RepArray[Char]): StructArr = {
+      val schema: Schema = Seq(StringField("Key", nullable = false), IntField("Value", nullable = false))
+      val arr = Buffer.flat(schema, 1, buf.length)
+      var start = 0
+      var count = 0L
+      while (start < (buf.length - 1)) {
+        while (buf(start) == ' ' || buf(start) == '\n' && start < (buf.length - 1)) start = start + 1
+        var end = start + 1
+        while ((buf(end) != ' ' || buf(end) != '\n') && (end < buf.length)) end = end + 1
+        val word = buf.value.slice(start, end).ArrayOfCharToString()
+        arr(count) = Record.column(schema, Seq(StringValue(word, word.length, false), IntValue(1, false)))
+        count = count + 1
       }
-      RepArray(arr, 26)
+      StructArr(arr, count)
     }
 
     override def Reducer(l: Rep[Array[Int]]): Rep[Int] = {
@@ -173,27 +221,29 @@ trait MyFoo extends MapReduceOps with ArrayOps {
   }
 }
 
+object myConfig {
+  val config = Config(
+    folder = "/home/reikdas/lmshdfs-dump/",
+    boundcheck = true,
+    comLogLvl = LOGLevel.ERROR,
+    runLogLvl = LOGLevel.ALL)
+}
+
+class MyBackend extends FlareBackend(myConfig.config) with MyFoo {
+
+  @virtualize
+  override def cmain(
+                      argc: Rep[Int],
+                      args: Rep[Array[String]]
+                    ): Rep[Unit] = {
+    val res = HDFSExec("/1G.txt", MyComputation())
+    res.free
+  }
+}
+
 object Main {
-
   def main(args: Array[String]): Unit = {
-    val snippet = new DslDriverC[Int, Unit] with MyFoo {
-      q =>
-      override val codegen = new DslGenC with CCodeGenLibFunction {
-        registerHeader("/home/reikdas/Research/lms-clean/src/main/resources/headers/", "\"scanner_header.h\"")
-        registerHeader("<stdbool.h>")
-        val IR: q.type = q
-      }
-
-
-      @virtualize
-      def snippet(dummy: Rep[Int]) = {
-        val res = HDFSExec("/1G.txt", MyComputation())
-        for (i <- 0 until 26: Range) {
-          printf("%c = %d\n", (i+65), res(i))
-        }
-        res.free
-      }
-    }
-    println(snippet.code)
+    val backend = new MyBackend()
+    backend.stage
   }
 }
