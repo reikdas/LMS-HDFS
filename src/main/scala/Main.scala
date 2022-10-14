@@ -8,9 +8,39 @@ import java.io.File
 import scala.collection.mutable.ListBuffer
 import sys.process._
 
-trait FileOps extends LibFunction {
-  def read(fd: Rep[Int], buf: Rep[Array[Char]], size: Rep[Long]): Rep[Int] =
-    libFunction[Int]("read", Unwrap(fd), Unwrap(buf), Unwrap(size))(Seq[Int](), Seq(1), Set())
+trait LMSMore extends ArrayOps {
+
+  case class RepArray[T: Manifest](value: Rep[Array[T]], length: Rep[Int]) {
+    def apply(idx: Rep[Int]): Rep[T] = value(idx)
+
+    def update(idx: Rep[Int], something: Rep[T]): Unit = {
+      value(idx) = something
+    }
+
+    def free = value.free
+  }
+
+
+  def ListToArr(l: ListBuffer[String]): Rep[Array[String]] = {
+    val arr = NewArray[String](l.size)
+    for (i <- 0 until l.size: Range) {
+      arr(i) = l(i)
+    }
+    arr
+  }
+
+}
+
+trait FileOps extends LibFunction with ScannerOps with LMSMore {
+  def readFile(fd: Rep[Int], buf: Rep[Array[Char]], size: Rep[Long]): RepArray[Char] = {
+    val readlen = libFunction[Int]("read", Unwrap(fd), Unwrap(buf), Unwrap(size))(Seq[Int](), Seq(1), Set())
+    RepArray[Char](buf, readlen)
+  }
+
+  def mmapFile(fd: Rep[Int], buf: Rep[Array[Char]], size: Rep[Long]): RepArray[Char] = {
+    val newbuf = mmap[Char](fd, size)
+    RepArray[Char](newbuf, size.toInt)
+  }
 }
 
 trait HDFSOps {
@@ -97,17 +127,9 @@ trait HDFSOps {
 trait MapReduceOps extends FileOps with ScannerOps with HDFSOps with MPIOps {
 
   abstract class MapReduceComputation[ValueType: Manifest, ReducerResult: Manifest] {
-    def Mapper(buf: Rep[Array[Char]], size: Rep[Int]): Rep[Array[ValueType]]
+    def Mapper(buf: Rep[Array[Char]], size: Rep[Long]): Rep[Array[ValueType]]
 
     def Reducer(l: Rep[Array[ValueType]]): Rep[ReducerResult]
-  }
-
-  def ListToArr(l: ListBuffer[String]): Rep[Array[String]] = {
-    val arr = NewArray[String](l.size)
-    for (i <- 0 until l.size: Range) {
-      arr(i) = l(i)
-    }
-    arr
   }
 
   def HDFSExec[ValueType: Manifest, ReducerResult: Manifest](
@@ -141,8 +163,8 @@ trait MapReduceOps extends FileOps with ScannerOps with HDFSOps with MPIOps {
         val idx = (rank * blocks_per_proc) + i
         val block_num = open(paths(idx))
         val size = filelen(block_num)
-        val readlen = read(block_num, buf, size)
-        val charmap = mapReduce.Mapper(buf, readlen) // readlen can be < buf.length for last block
+        val readbuf = readFile(block_num, buf, size)
+        val charmap = mapReduce.Mapper(readbuf.value, readbuf.length) // readlen can be < buf.length for last block
         for (j <- 0 until limit: Rep[Range]) {
           val dest = j / chars_per_proc
           // (rank * 100) to prevent blocking on receiving same char from different thread
@@ -157,8 +179,8 @@ trait MapReduceOps extends FileOps with ScannerOps with HDFSOps with MPIOps {
         val idx = ((paths.length / world_size) * world_size) + rank
         val block_num = open(paths(idx))
         val size = filelen(block_num)
-        val readlen = read(block_num, buf, size)
-        val charmap = mapReduce.Mapper(buf, readlen)
+        val readbuf = readFile(block_num, buf, size)
+        val charmap = mapReduce.Mapper(readbuf.value, readbuf.length)
         for (j <- 0 until limit: Rep[Range]) {
           val dest = j / chars_per_proc
           mpi_send(charmap(j), 1, mpi_integer, dest, (rank*100) + j, mpi_comm_world)
@@ -194,7 +216,6 @@ trait MapReduceOps extends FileOps with ScannerOps with HDFSOps with MPIOps {
         // Send to aggregator node
         mpi_send(mapReduce.Reducer(reducearg), 1, mpi_integer, 0, rank + limit, mpi_comm_world)
       }
-      buf.free
     }
 
     // Aggregate on node 0
@@ -225,9 +246,9 @@ trait MyFoo extends MapReduceOps with ArrayOps {
   @virtualize
   case class MyComputation() extends MapReduceComputation[Int, Int] {
 
-    override def Mapper(buf: Rep[Array[Char]], size: Rep[Int]): Rep[Array[Int]] = {
+    override def Mapper(buf: Rep[Array[Char]], size: Rep[Long]): Rep[Array[Int]] = {
       val arr = NewArray0[Int](26)
-      for (i <- 0 until size: Rep[Range]) {
+      for (i <- 0 until size.toInt) {
         val c = buf(i).toInt
         if (c >= 65 && c <= 90) {
           arr(c - 65) += 1
