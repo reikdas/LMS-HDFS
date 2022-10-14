@@ -21,7 +21,7 @@ trait HDFSOps {
     val output = result.!!
     val lines = output.split("\n")
     var count = 0
-    var size = 0
+    var size: Long = 0
     val blocks_infos = new ListBuffer[String]()
     val dnodes_infos = new ListBuffer[String]()
     val ips_infos = new ListBuffer[ListBuffer[String]]()
@@ -31,7 +31,7 @@ trait HDFSOps {
       if (line.nonEmpty && count == 0) {
         if (words(0).equals(path)) {
           count = count + 1
-          size = words(1).toInt
+          size = words(1).toLong
           flag = false
         } else {
           flag = true
@@ -261,7 +261,7 @@ object Main {
 
       @virtualize
       def snippet(dummy: Rep[Int]) = {
-        val res = HDFSExec("/1G.txt", MyComputation())
+        val res = HDFSExec("/10G.txt", MyComputation())
 
         res.free
       }
