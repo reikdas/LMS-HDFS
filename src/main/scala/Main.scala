@@ -20,7 +20,6 @@ trait LMSMore extends ArrayOps {
     def free = value.free
   }
 
-
   def ListToArr(l: ListBuffer[String]): Rep[Array[String]] = {
     val arr = NewArray[String](l.size)
     for (i <- 0 until l.size: Range) {
@@ -46,8 +45,8 @@ trait FileOps extends LibFunction with ScannerOps with LMSMore {
 trait HDFSOps {
   def GetPaths(path: String): ListBuffer[String] = {
     val basepath =
-      "/usr/lib/hadoop-3.3.2/bin/hdfs getconf -confKey dfs.datanode.data.dir".!!.replaceAll("\n", "")
-    val result = "/usr/lib/hadoop-3.3.2/bin/hdfs fsck %s -files -blocks -locations".format(path)
+      "hdfs getconf -confKey dfs.datanode.data.dir".!!.replaceAll("\n", "")
+    val result = "hdfs fsck %s -files -blocks -locations".format(path)
     val output = result.!!
     val lines = output.split("\n")
     var count = 0
@@ -118,7 +117,7 @@ trait HDFSOps {
   }
 
   def GetBlockLen(): Int = {
-    val output = "/usr/lib/hadoop-3.3.2/bin/hdfs getconf -confKey dfs.blocksize".!!
+    val output = "hdfs getconf -confKey dfs.blocksize".!!
     output.replace("\n", "").toInt
   }
 }
