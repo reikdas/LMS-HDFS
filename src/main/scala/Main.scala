@@ -274,10 +274,8 @@ object Main {
     val snippet = new DslDriverC[Int, Unit] with MyFoo {
       q =>
       override val codegen = new DslGenC with CCodeGenLibFunction with CCodeGenMPI with CCodeGenCMacro {
-        registerHeader("/home/reikdas/Research/lms-clean/src/main/resources/headers/", "\"scanner_header.h\"")
         val IR: q.type = q
       }
-
 
       @virtualize
       def snippet(dummy: Rep[Int]) = {
