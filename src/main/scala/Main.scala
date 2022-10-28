@@ -35,55 +35,14 @@ trait LMSMore extends ArrayOps with RangeOps {
     def free = value.free
   }
 
+  case class RepString(arr: RepArray[Char], start: Rep[Int], length: Rep[Int])
+
   def ListToArr(l: ListBuffer[String]): Rep[Array[String]] = {
     val arr = NewArray[String](l.size)
     for (i <- 0 until l.size: Range) {
       arr(i) = l(i)
     }
     arr
-  }
-
-  def sort[T: Manifest]
-  (arr: RepArray[T], compare: (Rep[T], Rep[T]) => Rep[Int]): RepArray[T] = {
-    for (i <- 0 until (arr.length - 1)) {
-      var min_idx = i
-      for (j <- (i + 1) until arr.length) {
-        if (compare(arr(j), arr(min_idx)) < 0) min_idx = j
-      }
-      val temp = arr(min_idx)
-      arr(min_idx) = arr(i)
-      arr(i) = temp
-    }
-    arr
-  }
-
-  def merge[T: Manifest](arr: RepArray[T], ends: RepArray[Int], compare: (Rep[T], Rep[T]) => Rep[Int]): RepArray[T] = {
-    val starts = NewArray[Int](ends.length)
-    starts(0) = 0
-    for (i <- 0 until ends.length - 1) {
-      starts(i+1) = ends(i)
-    }
-    while (starts)
-  }
-
-  def compare(str1: Rep[String], str2: Rep[String]): Rep[Int] = {
-    val l1 = str1.length
-    val l2 = str2.length
-    val lmin = if (l2 < l1) l2 else l1
-
-    for (i <- 0 until lmin) {
-      val str1_ch = str1.charAt(i)
-      val str2_ch = str2.charAt(i)
-      if (str1_ch != str2_ch) return str1_ch - str2_ch
-    }
-
-    // Edge case for strings like
-    // String 1="Geeks" and String 2="Geeksforgeeks"
-    if (l1 < l2) l1 - l2
-    else { // If none of the above conditions is true,
-      // it implies both the strings are equal
-      0
-    }
   }
 }
 
@@ -174,13 +133,12 @@ trait MapReduceOps extends FileOps with ScannerOps with HDFSOps with LMSMore {
 
     def Mapper(buf: RepArray[Char]): RepArray[MapperResult]
 
-    def Reducer(l: RepArray[MapperResult]): Rep[ReducerResult]
+    def Reducer(k: Rep[MapperResult], kcount: Rep[Int]): Rep[ReducerResult]
   }
 
   def HDFSExec[MapperResult: Manifest, ReducerResult: Manifest](
                                                                  filename: String,
-                                                                 mapReduce: MapReduceComputation[MapperResult, ReducerResult],
-                                                                 compare: (Rep[MapperResult], Rep[MapperResult]) => Rep[Int]) = {
+                                                                 mapReduce: MapReduceComputation[MapperResult, ReducerResult]) = {
     val paths = ListToArr(GetPaths(filename))
     val buf = NewArray[Char](GetBlockLen() + 1)
 
@@ -188,64 +146,71 @@ trait MapReduceOps extends FileOps with ScannerOps with HDFSOps with LMSMore {
     val block_num_f = open(paths(0))
     val size_f = filelen(block_num_f)
     val readbuf = readFile(block_num_f, buf, size_f)
-    val foo = mapReduce.Mapper(readbuf)
-    val arr_f = sort(foo, compare)
+    val arr_f = mapReduce.Mapper(readbuf)
 
-    val mapperout = NewArray[MapperResult](paths.length * arr_f.length * 2)
-    val ends = NewArray[Int](paths.length) // Array storing last indices of each mapper result in arr
+    val limit = paths.length * arr_f.length * 2
+    val mapperout = NewArray[MapperResult](limit)
+    var end: Int = 0
     for (i <- 0 until arr_f.length) {
-      mapperout(i) = arr_f(i)
+      mapperout(end) = arr_f(i)
+      end = end + 1
     }
-    ends(0) = arr_f.length
 
     for (i <- 1 until paths.length) {
       val block_num = open(paths(i))
       val size = filelen(block_num)
       val out = readFile(block_num, buf, size)
-      val foo = mapReduce.Mapper(out)
-      val arr = sort(foo, compare)
+      val arr = mapReduce.Mapper(out)
 
       for (j <- 0 until arr.length) {
-        mapperout(ends(i - 1) + j) = arr(j)
+        mapperout(end) = arr(j)
+        //if (end >= limit) ???
+        end = end + 1
       }
-      ends(i) = arr.length
     }
 
-    val msort_arr = merge(RepArray(mapperout, ends(paths.length - 1)), RepArray(ends, paths.length), compare)
-    var idx_start = 0
-    val logical_end = ends(paths.length - 1)
-    while (idx_start < logical_end) {
-      var idx_end = idx_start + 1
-      val key = msort_arr(idx_start)
-      while (msort_arr(idx_end) == key && idx_end <= logical_end) idx_end = idx_end + 1
-      println(key)
-      println(mapReduce.Reducer(RepArray(msort_arr.slice(idx_start, idx_end), idx_end - idx_start)))
-      idx_start = idx_end
+    var idx = 0
+    while (idx < end) {
+      val k = mapperout(idx)
+      var new_idx = idx + 1
+      var j = idx + 1
+      while (j < end) {
+        if (mapperout(j) == k) {
+          val tmp = mapperout(j)
+          mapperout(j) = mapperout(new_idx)
+          mapperout(new_idx) = tmp
+          new_idx = new_idx + 1
+        }
+        j = j + 1
+      }
+      println(mapReduce.Reducer(k, new_idx-idx))
+      idx = new_idx
     }
   }
 }
 
 trait MyFoo extends MapReduceOps with ArrayOps {
   @virtualize
-  case class MyComputation() extends MapReduceComputation[String, Int] {
+  case class MyComputation() extends MapReduceComputation[RepString, Int] {
 
-    override def Mapper(buf: RepArray[Char]): RepArray[String] = {
-      val arr = NewArray[String](buf.length)
+    override def Mapper(buf: RepArray[Char]): RepArray[RepString] = {
+      val arr = NewArray[RepString](buf.length)
       var start = 0
       var count = 0
       while (start < (buf.length - 1)) {
         while (buf(start) == ' ' || buf(start) == '\n' && start < (buf.length - 1)) start = start + 1
         var end = start + 1
         while ((buf(end) != ' ' || buf(end) != '\n') && (end < buf.length)) end = end + 1
-        val word = buf.slice(start, end).ArrayOfCharToString()
+        val word = RepString(buf, start, end - start)
+        start = end
         arr(count) = word
         count = count + 1
       }
       RepArray(arr, count)
     }
 
-    override def Reducer(l: RepArray[String]): Rep[Int] = {
-      l.length
+    override def Reducer(k: Rep[RepString], kcount: Rep[Int]): Rep[Int] = {
+      kcount
     }
   }
 }
@@ -261,7 +226,7 @@ object Main {
 
       @virtualize
       def snippet(dummy: Rep[Int]) = {
-        val res = HDFSExec("/10G.txt", MyComputation(), compare)
+        val res = HDFSExec("/10G.txt", MyComputation())
       }
     }
     println(snippet.code)
