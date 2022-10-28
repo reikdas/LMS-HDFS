@@ -243,7 +243,7 @@ trait MapReduceOps extends FileOps with ScannerOps with HDFSOps with MPIOps {
 
 trait MyFoo extends MapReduceOps with ArrayOps {
   @virtualize
-  case class MyComputation() extends MapReduceComputation[Int, Long] {
+  case class MyComputation() extends MapReduceComputation[Int, Int] {
 
     override def Mapper(buf: Rep[Array[Char]], size: Rep[Long]): Rep[Array[Int]] = {
       val arr = NewArray0[Int](26)
@@ -258,8 +258,8 @@ trait MyFoo extends MapReduceOps with ArrayOps {
       arr
     }
 
-    override def Reducer(l: Rep[Array[Int]]): Rep[Long] = {
-      var total = 0L
+    override def Reducer(l: Rep[Array[Int]]): Rep[Int] = {
+      var total = 0
       for (i <- 0 until l.length) {
         total = total + l(i)
       }
