@@ -44,6 +44,8 @@ trait LMSMore extends ArrayOps with RangeOps {
     }
     arr
   }
+
+
 }
 
 trait HDFSOps {
@@ -129,16 +131,23 @@ trait HDFSOps {
 @virtualize
 trait MapReduceOps extends FileOps with ScannerOps with HDFSOps with LMSMore {
 
-  abstract class MapReduceComputation[MapperResult: Manifest, ReducerResult: Manifest] {
-
-    def Mapper(buf: RepArray[Char]): RepArray[MapperResult]
-
-    def Reducer(k: Rep[MapperResult], kcount: Rep[Int]): Rep[ReducerResult]
+  def Mapper(buf: RepArray[Char]): RepArray[RepString] = {
+    val arr = NewArray[RepString](buf.length)
+    var start = 0
+    var count = 0
+    while (start < (buf.length - 1)) {
+      while (buf(start) == ' ' || buf(start) == '\n' && start < (buf.length - 1)) start = start + 1
+      var end = start + 1
+      while ((buf(end) != ' ' || buf(end) != '\n') && (end < buf.length)) end = end + 1
+      val word = RepString(buf, start, end - start)
+      start = end
+      arr(count) = word
+      count = count + 1
+    }
+    RepArray(arr, count)
   }
 
-  def HDFSExec[MapperResult: Manifest, ReducerResult: Manifest](
-                                                                 filename: String,
-                                                                 mapReduce: MapReduceComputation[MapperResult, ReducerResult]) = {
+  def HDFSExec(filename: String) = {
     val paths = ListToArr(GetPaths(filename))
     val buf = NewArray[Char](GetBlockLen() + 1)
 
@@ -146,10 +155,10 @@ trait MapReduceOps extends FileOps with ScannerOps with HDFSOps with LMSMore {
     val block_num_f = open(paths(0))
     val size_f = filelen(block_num_f)
     val readbuf = readFile(block_num_f, buf, size_f)
-    val arr_f = mapReduce.Mapper(readbuf)
+    val arr_f = Mapper(readbuf)
 
     val limit = paths.length * arr_f.length * 2
-    val mapperout = NewArray[MapperResult](limit)
+    val mapperout = NewArray[RepString](limit)
     var end: Int = 0
     for (i <- 0 until arr_f.length) {
       mapperout(end) = arr_f(i)
@@ -160,7 +169,7 @@ trait MapReduceOps extends FileOps with ScannerOps with HDFSOps with LMSMore {
       val block_num = open(paths(i))
       val size = filelen(block_num)
       val out = readFile(block_num, buf, size)
-      val arr = mapReduce.Mapper(out)
+      val arr = Mapper(out)
 
       for (j <- 0 until arr.length) {
         mapperout(end) = arr(j)
@@ -169,56 +178,27 @@ trait MapReduceOps extends FileOps with ScannerOps with HDFSOps with LMSMore {
       }
     }
 
-    var idx = 0
-    while (idx < end) {
-      val k = mapperout(idx)
-      var new_idx = idx + 1
-      var j = idx + 1
-      while (j < end) {
-        if (mapperout(j) == k) {
-          val tmp = mapperout(j)
-          mapperout(j) = mapperout(new_idx)
-          mapperout(new_idx) = tmp
-          new_idx = new_idx + 1
+    for (i <- 0 until (end - 1)) {
+      val k = mapperout(i)
+      if (k!="") {
+        var count = 0
+        var j = i + 1
+        for (j <- (i + 1) until end) {
+            if (k == mapperout(j)) {
+              count = count + 1
+              mapperout(j) = ""
+            }
         }
-        j = j + 1
+        println()
       }
-      println(mapReduce.Reducer(k, new_idx-idx))
-      idx = new_idx
     }
   }
 }
 
-trait MyFoo extends MapReduceOps with ArrayOps {
-  @virtualize
-  case class MyComputation() extends MapReduceComputation[RepString, Int] {
-
-    override def Mapper(buf: RepArray[Char]): RepArray[RepString] = {
-      val arr = NewArray[RepString](buf.length)
-      var start = 0
-      var count = 0
-      while (start < (buf.length - 1)) {
-        while (buf(start) == ' ' || buf(start) == '\n' && start < (buf.length - 1)) start = start + 1
-        var end = start + 1
-        while ((buf(end) != ' ' || buf(end) != '\n') && (end < buf.length)) end = end + 1
-        val word = RepString(buf, start, end - start)
-        start = end
-        arr(count) = word
-        count = count + 1
-      }
-      RepArray(arr, count)
-    }
-
-    override def Reducer(k: Rep[RepString], kcount: Rep[Int]): Rep[Int] = {
-      kcount
-    }
-  }
-}
-
-object Main {
+object Main extends MapReduceOps {
 
   def main(args: Array[String]): Unit = {
-    val snippet = new DslDriverC[Int, Unit] with MyFoo {
+    val snippet = new DslDriverC[Int, Unit] {
       q =>
       override val codegen = new DslGenC with CCodeGenLibFunction {
         val IR: q.type = q
@@ -226,7 +206,7 @@ object Main {
 
       @virtualize
       def snippet(dummy: Rep[Int]) = {
-        val res = HDFSExec("/10G.txt", MyComputation())
+        val res = HDFSExec("/10G.txt")
       }
     }
     println(snippet.code)
