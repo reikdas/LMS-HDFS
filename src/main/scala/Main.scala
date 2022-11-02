@@ -167,10 +167,10 @@ trait MapReduceOps extends FileOps with ScannerOps with HDFSOps with MPIOps {
         for (j <- 0 until limit: Rep[Range]) {
           val dest = j / chars_per_proc
           // (rank * 100) to prevent blocking on receiving same char from different thread
-          mpi_send(charmap(j), 1, mpi_integer, dest, (rank*100) + j, mpi_comm_world)
+          mpi_send(charmap(j), 1, mpi_long, dest, (rank*100) + j, mpi_comm_world)
         }
         for (j <- 0 until remaining_red: Rep[Range]) {
-          mpi_send(charmap(limit + j), 1, mpi_integer, j, (rank*100) + j+limit, mpi_comm_world)
+          mpi_send(charmap(limit + j), 1, mpi_long, j, (rank*100) + j+limit, mpi_comm_world)
         }
         charmap.free
       }
@@ -182,10 +182,10 @@ trait MapReduceOps extends FileOps with ScannerOps with HDFSOps with MPIOps {
         val charmap = mapReduce.Mapper(readbuf.value, readbuf.length)
         for (j <- 0 until limit: Rep[Range]) {
           val dest = j / chars_per_proc
-          mpi_send(charmap(j), 1, mpi_integer, dest, (rank*100) + j, mpi_comm_world)
+          mpi_send(charmap(j), 1, mpi_long, dest, (rank*100) + j, mpi_comm_world)
         }
         for (j <- 0 until remaining_red: Rep[Range]) { // Same as above loop for remaining_red
-          mpi_send(charmap(limit + j), 1, mpi_integer, j, (rank*100) + j + limit, mpi_comm_world)
+          mpi_send(charmap(limit + j), 1, mpi_long, j, (rank*100) + j + limit, mpi_comm_world)
         }
         charmap.free
       }
@@ -196,24 +196,24 @@ trait MapReduceOps extends FileOps with ScannerOps with HDFSOps with MPIOps {
         val tag = (rank * chars_per_proc) + i
         for (j <- 0 until paths.length - remaining_map) {
           val src = j/blocks_per_proc
-          mpi_rec(reducearg(j), 1, mpi_integer, src, (src * 100) + tag, mpi_comm_world)
+          mpi_rec(reducearg(j), 1, mpi_long, src, (src * 100) + tag, mpi_comm_world)
         }
         for (j <- 0 until remaining_map: Rep[Range]) { // Same as above loop for remaining_map
-          mpi_rec(reducearg(paths.length - remaining_map + j), 1, mpi_integer, j, (j*100) + tag, mpi_comm_world)
+          mpi_rec(reducearg(paths.length - remaining_map + j), 1, mpi_long, j, (j*100) + tag, mpi_comm_world)
         }
         // Send to aggregator node
-        mpi_send(mapReduce.Reducer(reducearg), 1, mpi_integer, 0, tag, mpi_comm_world)
+        mpi_send(mapReduce.Reducer(reducearg), 1, mpi_long, 0, tag, mpi_comm_world)
       }
       if (rank < remaining_red) { // Same as above for remaining_red
         for (i <- 0 until paths.length - remaining_map) {
           val src = i/blocks_per_proc
-          mpi_rec(reducearg(i), 1, mpi_integer, src, (src * 100) + rank + limit, mpi_comm_world)
+          mpi_rec(reducearg(i), 1, mpi_long, src, (src * 100) + rank + limit, mpi_comm_world)
         }
         for (i <- 0 until remaining_map: Rep[Range]) { // Same as above loop for remaining_map
-          mpi_rec(reducearg(paths.length - remaining_map + i), 1, mpi_integer, i, (i*100) + rank + limit, mpi_comm_world)
+          mpi_rec(reducearg(paths.length - remaining_map + i), 1, mpi_long, i, (i*100) + rank + limit, mpi_comm_world)
         }
         // Send to aggregator node
-        mpi_send(mapReduce.Reducer(reducearg), 1, mpi_integer, 0, rank + limit, mpi_comm_world)
+        mpi_send(mapReduce.Reducer(reducearg), 1, mpi_long, 0, rank + limit, mpi_comm_world)
       }
     }
 
@@ -221,10 +221,10 @@ trait MapReduceOps extends FileOps with ScannerOps with HDFSOps with MPIOps {
     val res = NewArray0[ReducerResult](26)
     if (rank == 0) {
       for (i <- 0 until limit: Rep[Range]) {
-        mpi_rec(res(i), 1, mpi_integer, i/chars_per_proc, i, mpi_comm_world)
+        mpi_rec(res(i), 1, mpi_long, i/chars_per_proc, i, mpi_comm_world)
       }
       for (i <- 0 until remaining_red: Rep[Range]) { // Same as above loop for remaining_red
-        mpi_rec(res(limit + i), 1, mpi_integer, i, limit + i, mpi_comm_world)
+        mpi_rec(res(limit + i), 1, mpi_long, i, limit + i, mpi_comm_world)
       }
       // FIXME: Move this print loop to main
       // This print is also parallelized across procs
@@ -243,10 +243,10 @@ trait MapReduceOps extends FileOps with ScannerOps with HDFSOps with MPIOps {
 
 trait MyFoo extends MapReduceOps with ArrayOps {
   @virtualize
-  case class MyComputation() extends MapReduceComputation[Int, Int] {
+  case class MyComputation() extends MapReduceComputation[Long, Long] {
 
-    override def Mapper(buf: Rep[Array[Char]], size: Rep[Long]): Rep[Array[Int]] = {
-      val arr = NewArray0[Int](26)
+    override def Mapper(buf: Rep[Array[Char]], size: Rep[Long]): Rep[Array[Long]] = {
+      val arr = NewArray0[Long](26)
       for (i <- 0 until size.toInt) {
         val c = buf(i).toInt
         if (c >= 65 && c <= 90) {
@@ -258,8 +258,8 @@ trait MyFoo extends MapReduceOps with ArrayOps {
       arr
     }
 
-    override def Reducer(l: Rep[Array[Int]]): Rep[Int] = {
-      var total = 0
+    override def Reducer(l: Rep[Array[Long]]): Rep[Long] = {
+      var total = 0L
       for (i <- 0 until l.length) {
         total = total + l(i)
       }
@@ -274,6 +274,7 @@ object Main {
     val snippet = new DslDriverC[Int, Unit] with MyFoo {
       q =>
       override val codegen = new DslGenC with CCodeGenLibFunction with CCodeGenMPI with CCodeGenCMacro {
+        registerHeader("\"scanner_header.h\"")
         val IR: q.type = q
       }
 
