@@ -178,7 +178,7 @@ trait MapReduceOps extends HDFSOps with FileOps {
     while (idx < end) {
       val k = mapperout(idx)
       if (strcmp(k, "") != 0) {
-        var count = 0
+        var count = 1
         var j = idx + 1
         while (j < end) {
           if (strcmp(mapperout(j), k) == 0) {
