@@ -229,7 +229,7 @@ trait MapReduceOps extends FileOps with ScannerOps with HDFSOps with MPIOps {
       // FIXME: Move this print loop to main
       // This print is also parallelized across procs
       for (i <- 0 until 26: Rep[Range]) {
-        printf("%c = %d\n", (i + 65), res(i))
+        printf("%c = %ld\n", (i + 65), res(i))
       }
     }
 
@@ -259,7 +259,7 @@ trait MyFoo extends MapReduceOps with ArrayOps {
     }
 
     override def Reducer(l: Rep[Array[Long]]): Rep[Long] = {
-      var total = 0L
+      var total: Rep[Long] = 0L
       for (i <- 0 until l.length) {
         total = total + l(i)
       }
