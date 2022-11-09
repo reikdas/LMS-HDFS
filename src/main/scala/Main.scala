@@ -1,7 +1,7 @@
 import lms.core.stub._
 import lms.macros.SourceContext
-import lms.core.virtualize
-import lms.thirdparty.{CCodeGenLibFunction, LibFunction, ScannerOps}
+import lms.core.{Backend, virtualize}
+import lms.thirdparty.{CCodeGenCMacro, CCodeGenLibFunction, CCodeGenMPI, CCodeGenSizeTOps, LibFunction, MPIOps, ScannerOps, SizeTOps}
 import lms.collection.mutable.ArrayOps
 
 import java.io.File
@@ -18,6 +18,55 @@ trait FileOps extends ScannerOps with LMSMore {
     val newbuf = mmap[Char](fd, size)
     RepArray[Char](newbuf, size.toInt)
   }
+}
+
+@virtualize
+trait HashMapOps extends LibFunction with ArrayOps {
+  class ht
+
+  def ht_create() = libFunction[Array[ht]]("ht_create")(Seq(), Seq(), Set())
+
+  def ht_get(tab: Rep[Array[ht]], arr: Rep[Array[Char]]) = libFunction[Int]("ht_get", Unwrap(tab), Unwrap(arr))(Seq(0, 1), Seq(), Set())
+
+  def ht_set(tab: Rep[Array[ht]], arr: Rep[Array[Char]], value: Rep[Int]) = libFunction[Unit]("ht_set", Unwrap(tab), Unwrap(arr), Unwrap(value))(Seq(0, 1), Seq(0), Set())
+
+  class hti
+
+  def ht_iterator(tab: Rep[Array[ht]]) = libFunction[hti]("ht_iterator", Unwrap(tab))(Seq(0), Seq(), Set())
+
+  def ht_next(iter: Rep[hti]) = libFunction[Boolean]("ht_next", Unwrap(iter))(Seq(0), Seq(0), Set(0))
+
+  def hti_value(iter: Rep[hti]) = libFunction[Int]("hti_value", Unwrap(iter))(Seq(0), Seq(), Set(0))
+
+  def hti_key(iter: Rep[hti]) = libFunction[Array[Char]]("hti_key", Unwrap(iter))(Seq(0), Seq(), Set(0))
+}
+
+@virtualize
+trait CharArrayOps extends LibFunction with LMSMore with StringOps with OrderingOps {
+  case class RepString(arr: RepArray[Char], start: Rep[Int], length: Rep[Int]) {
+    def apply(idx: Rep[Int]) = arr(idx)
+
+    def update(idx: Rep[Int], something: Rep[Char]): Unit = {
+      arr(idx) = something
+    }
+  }
+
+  def isspace(c: Rep[Char]) = libFunction[Boolean]("isspace", Unwrap(c))(Seq[Int](0), Seq(), Set())
+
+  def strncpy(str1: Rep[Array[Char]], str2: Rep[Array[Char]], length: Int) =
+    libFunction[Array[Char]]("strncpy", Unwrap(str1), Unwrap(str2), Unwrap(length))(Seq[Int](0, 1, 2), Seq(0), Set())
+
+  def hashCode(str: Rep[Array[Char]], len: Rep[Int]) = {
+    var hashVal = 0
+    var i = 0
+    while ((i: Rep[Int]) < str.length) {
+      hashVal = str(i).toInt + (31 * hashVal)
+      i += 1
+    }
+    hashVal
+  }
+
+  def strlen(arr: Rep[Array[Char]]) = libFunction[Int]("strlen", Unwrap(arr))(Seq(0), Seq(), Set())
 }
 
 @virtualize
@@ -43,16 +92,7 @@ trait LMSMore extends ArrayOps with LibFunction {
     arr
   }
 
-  case class RepString(arr: RepArray[Char], start: Rep[Int], length: Rep[Int])
-
-  def getString(rstring: RepString, tmp: Rep[Array[Char]]) = {
-    unchecked[Unit](tmp, "[", rstring.length, "] = '\\0'")
-    unchecked[String]("strncpy(", tmp, ",", rstring.arr.slice(rstring.start, rstring.start + rstring.length), ", ", rstring.length, ")")
-  }
-
-  def isspace(c: Rep[Char]) = libFunction[Boolean]("isspace", Unwrap(c))(Seq[Int](0), Seq(), Set())
-
-  def strcmp(str1: Rep[String], str2: Rep[String]) = libFunction[Int]("strcmp", Unwrap(str1), Unwrap(str2))(Seq[Int](0, 1), Seq(), Set())
+  def `null`[T: Manifest]: Rep[T] = Wrap[T](Backend.Const(null))
 }
 
 trait HDFSOps {
@@ -136,63 +176,125 @@ trait HDFSOps {
 }
 
 @virtualize
-trait MapReduceOps extends HDFSOps with FileOps {
+trait MapReduceOps extends HDFSOps with FileOps with MPIOps with CharArrayOps with SizeTOps with HashMapOps {
 
-  def Mapper(buf: RepArray[Char]) = {
-    val arr = NewArray[String](buf.length)
-    var start = 0
-    var count = 0
-    while (start < (buf.length - 1)) {
-      while (isspace(buf(start)) && start < (buf.length - 1)) start = start + 1
-      var end = start + 1
-      while (!isspace(buf(end)) && (end < buf.length)) end = end + 1
-      val word = RepString(buf, start, end - start)
-      val tmp = NewArray[Char](end-start + 1)
-      arr(count) = getString(word, tmp)
-      start = end
-      count = count + 1
-    }
-    RepArray(arr, count)
-  }
 
   def HDFSExec(filename: String) = {
     val paths = ListToArr(GetPaths(filename))
-    val buf = NewArray[Char](GetBlockLen() + 1)
-    val mapperout = NewArray[String](GetBlockLen()*paths.length + 1)
 
-    var end = 0
+    // MPI initialize
+    var world_size = 0
+    var world_rank = 0
+    mpi_init()
+    mpi_comm_size(mpi_comm_world, world_size)
+    mpi_comm_rank(mpi_comm_world, world_rank)
 
-    for (i <- 0 until paths.length) {
-      val block_num = open(paths(i))
-      val size = filelen(block_num)
-      val out = readFile(block_num, buf, size)
-      val arr = Mapper(out)
+    // Allocate mappers and reducers to processes
+    if (world_size > paths.length) world_size = paths.length // max_procs = num_blocks
+    val blocks_per_proc = paths.length / world_size
+    var remaining_map = 0 // Num_blocks that can't be evenly divided among procs
+    if (paths.length % world_size != 0) remaining_map = paths.length % world_size
 
-      for (j <- 0 until arr.length) {
-        mapperout(end) = arr(j)
-        end = end + 1
-      }
-    }
+    if (world_rank < world_size) {
+      val buf = NewArray[Char](GetBlockLen() + 1)
 
-    var idx = 0
-    while (idx < end) {
-      val k = mapperout(idx)
-      if (strcmp(k, "") != 0) {
-        var count = 1
-        var j = idx + 1
-        while (j < end) {
-          if (strcmp(mapperout(j), k) == 0) {
-            mapperout(j) = ""
-            count = count + 1
+      for (i <- 0 until paths.length) {
+        if (i % world_size == world_rank) {
+
+          // Get buffer of chars from file
+          val idx = (world_rank * blocks_per_proc) + i
+          val block_num = open(paths(idx))
+          val size = filelen(block_num)
+          val readbuf = readFile(block_num, buf, size)
+
+          val total_len = paths.length * GetBlockLen()
+
+          // Each row r is the data being sent to reducer r
+          val redbufs = NewArray[Char](world_size * total_len)
+          // Storing number of chars to be sent to reducer idx
+          val chars_per_reducer = NewArray0[Int](world_size);
+
+          var start = 0
+          while (start < readbuf.length - 1) {
+            while (isspace(readbuf(start)) && start < (readbuf.length - 1)) start = start + 1
+            var end = start + 1
+            while (!isspace(readbuf(end)) && (end < readbuf.length)) end = end + 1
+            val len = end - start
+            // NOTE: The end in a slice doesn't matter
+            val which_reducer = hashCode(readbuf.slice(start, end), len) % world_size
+            val dest = memcpy(
+              redbufs.slice(which_reducer * total_len + chars_per_reducer(which_reducer), which_reducer * total_len + chars_per_reducer(which_reducer) + len),
+              readbuf.slice(start, end),
+              SizeT(len))
+            printf("%c\n", dest(0))
+            redbufs(which_reducer * total_len + chars_per_reducer(which_reducer) + len + 1) = '\0'
+            if (end == readbuf.length) {
+              chars_per_reducer(which_reducer) = chars_per_reducer(which_reducer) + len
+            } else {
+              chars_per_reducer(which_reducer) = chars_per_reducer(which_reducer) + 1 + len
+            }
+            start = end
           }
-          j = j + 1
+
+          val M = NewArray[Int](world_size * world_size)
+          mpi_allgather(chars_per_reducer, world_size, mpi_int, M, world_size, mpi_int, mpi_comm_world)
+
+          var num_elem_for_red = 0
+          for (j <- 0 until world_size) {
+            num_elem_for_red = num_elem_for_red + M(world_size * j + world_rank)
+          }
+
+          val recv_buf = NewArray[Char](num_elem_for_red)
+
+          for (j <- 0 until world_size) {
+            val tmp: Rep[Array[Char]] = if (world_rank == j) recv_buf else `null`[Array[Char]]
+            val recvcounts = NewArray[Int](world_size)
+            for (k <- 0 until world_size) {
+              recvcounts(j) = M(world_size * k + j)
+            }
+            val displs = NewArray[Int](world_size)
+            displs(0) = 0
+            for (k <- 1 until world_size) {
+              displs(j) = displs(k - 1) + recvcounts(k - 1)
+            }
+            mpi_gatherv(redbufs.slice(j * total_len, -1), M(world_size * world_rank + j), mpi_char, tmp, recvcounts, displs, mpi_char, j, mpi_comm_world)
+                        printf("%lu\n", tmp(0))
+
+            if (world_rank == j) {
+              val z = ht_create()
+              var spointer = 0
+              while (spointer < num_elem_for_red) {
+                val len = strlen(tmp.slice(spointer, -1))
+                var value = ht_get(z, tmp.slice(spointer, -1))
+                //printf("%d\n", tmp(0))
+                if (value == -1) {
+                  value = 1
+                } else {
+                  value = value + 1
+                }
+                ht_set(z, tmp.slice(spointer, -1), value)
+                spointer = spointer + len + 1
+              }
+              //val dd = ht_get(z, tmp)
+              //              printf("%d", dd)
+              val it = ht_iterator(z)
+              while (ht_next(it)) {
+                printf("%s %d\n", hti_key(it), hti_value(it))
+              }
+            }
+            recvcounts.free
+            displs.free
+          }
+          redbufs.free
+          chars_per_reducer.free
+          M.free
+          recv_buf.free
         }
-        printf("%s = %d\n", k, count)
       }
-      idx += 1
+      buf.free
     }
-    buf.free
-    mapperout.free
+    paths.free
+    mpi_finalize()
   }
 }
 
@@ -201,10 +303,20 @@ object Main {
   def main(args: Array[String]): Unit = {
     val snippet = new DslDriverC[Int, Unit] with MapReduceOps {
       q =>
-      override val codegen = new DslGenC with CCodeGenLibFunction {
+      override val codegen = new DslGenC with CCodeGenLibFunction with CCodeGenMPI with CCodeGenCMacro with CCodeGenSizeTOps {
+        override def remap(m: Typ[_]): String =
+          if (m <:< manifest[ht]) {
+            "ht"
+          } else if (m <:< manifest[hti]) {
+            "hti"
+          } else {
+            super.remap(m)
+          }
+
         registerHeader("\"scanner_header.h\"")
         registerHeader("<ctype.h>")
         registerHeader("<string.h>")
+        registerHeader("\"ht.h\"")
         val IR: q.type = q
       }
 
