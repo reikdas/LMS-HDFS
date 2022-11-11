@@ -14,10 +14,10 @@ trait FileOps extends ScannerOps with LMSMore {
     RepArray[Char](buf, readlen)
   }
 
-//  def mmapFile(fd: Rep[Int], buf: Rep[Array[Char]], size: Rep[Long]): RepArray[Char] = {
-//    val newbuf = mmap[Char](fd, size)
-//    RepArray[Char](newbuf, size.toInt)
-//  }
+  def mmapFile(fd: Rep[Int], buf: Rep[LongArray[Char]], size: Rep[Long]): RepArray[Char] = {
+    val newbuf = mmap2[Char](fd, size)
+    RepArray[Char](newbuf, size.toInt)
+  }
 }
 
 @virtualize
@@ -240,7 +240,7 @@ trait MapReduceOps extends HDFSOps with FileOps with MPIOps with CharArrayOps wi
     val idx = world_rank
     val block_num = open(paths(idx))
     val size = filelen(block_num)
-    val fpointer = readFile(block_num, buf, size)
+    val fpointer = mmapFile(block_num, buf, size)
 
     val total_len = paths.length * GetBlockLen()
 
