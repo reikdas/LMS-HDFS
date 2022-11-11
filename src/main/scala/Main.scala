@@ -192,9 +192,9 @@ trait HDFSOps {
     nativepaths
   }
 
-  def GetBlockLen(): Int = {
+  def GetBlockLen(): Long = {
     val output = "hdfs getconf -confKey dfs.blocksize".!!
-    output.replace("\n", "").toInt
+    output.replace("\n", "").toLong
   }
 }
 
