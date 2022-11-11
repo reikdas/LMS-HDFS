@@ -215,7 +215,7 @@ trait MapReduceOps extends HDFSOps with FileOps with MPIOps with CharArrayOps wi
 
 
   def HDFSExec(filename: String) = {
-    val paths = ListToArr(GetPaths(filename).take(4))
+    val paths = ListToArr(GetPaths(filename))
 
     // MPI initialize
     var world_size = 0
@@ -279,6 +279,7 @@ trait MapReduceOps extends HDFSOps with FileOps with MPIOps with CharArrayOps wi
 
     val recv_buf = NewLongArray[Char](num_elem_for_red, Some(0))
 
+    val z = ht_create()
     for (j <- 0 until world_size) {
       val tmp: Rep[LongArray[Char]] = if (world_rank == j) recv_buf else `null`[LongArray[Char]]
       val recvcounts = NewArray0[Int](world_size)
@@ -293,7 +294,7 @@ trait MapReduceOps extends HDFSOps with FileOps with MPIOps with CharArrayOps wi
       mpi_gatherv(redbufs.slice(j * total_len, -1L), M(world_size * world_rank + j).toInt, mpi_char, tmp, recvcounts, displs, mpi_char, j, mpi_comm_world)
 
       if (world_rank == j) {
-        val z = ht_create()
+
         var spointer = 0L
         while (spointer < num_elem_for_red) {
           val len = strlen(tmp.slice(spointer, -1L))
@@ -309,13 +310,14 @@ trait MapReduceOps extends HDFSOps with FileOps with MPIOps with CharArrayOps wi
         }
         //val dd = ht_get(z, tmp)
         //              printf("%d", dd)
-        val it = ht_iterator(z)
-        while (ht_next(it)) {
-          printf("%s %d\n", hti_key(it), hti_value(it))
-        }
+
       }
       recvcounts.free
       displs.free
+    }
+    val it = ht_iterator(z)
+    while (ht_next(it)) {
+      printf("%s %d\n", hti_key(it), hti_value(it))
     }
     redbufs.free
     chars_per_reducer.free
