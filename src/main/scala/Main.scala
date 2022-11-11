@@ -215,7 +215,7 @@ trait MapReduceOps extends HDFSOps with FileOps with MPIOps with CharArrayOps wi
 
 
   def HDFSExec(filename: String) = {
-    val paths = ListToArr(GetPaths(filename).take(2))
+    val paths = ListToArr(GetPaths(filename).take(4))
 
     // MPI initialize
     var world_size = 0
@@ -280,7 +280,6 @@ trait MapReduceOps extends HDFSOps with FileOps with MPIOps with CharArrayOps wi
     val recv_buf = NewLongArray[Char](num_elem_for_red, Some(0))
 
     for (j <- 0 until world_size) {
-      printf("Proc %d\n: idx = %lu\n", world_rank, j)
       val tmp: Rep[LongArray[Char]] = if (world_rank == j) recv_buf else `null`[LongArray[Char]]
       val recvcounts = NewArray0[Int](world_size)
       for (k <- 0 until world_size) {
