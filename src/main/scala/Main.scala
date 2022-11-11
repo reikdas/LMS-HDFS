@@ -279,19 +279,19 @@ trait MapReduceOps extends HDFSOps with FileOps with MPIOps with CharArrayOps wi
 
     val recv_buf = NewLongArray[Char](num_elem_for_red, Some(0))
 
-    for (j <- 0L until world_size.toLong) {
+    for (j <- 0 until world_size) {
       printf("Proc %d\n: idx = %lu\n", world_rank, j)
       val tmp: Rep[LongArray[Char]] = if (world_rank == j) recv_buf else `null`[LongArray[Char]]
-      val recvcounts = NewLongArray[Long](world_size.toLong, Some(0))
-      for (k <- 0L until world_size.toLong) {
-        recvcounts(k) = M(world_size * k + j)
+      val recvcounts = NewArray0[Int](world_size)
+      for (k <- 0 until world_size) {
+        recvcounts(k) = M(world_size * k + j).toInt
       }
-      val displs = NewLongArray[Long](world_size.toLong, Some(0))
-      displs(0L) = 0L
-      for (k <- 1L until world_size.toLong) {
+      val displs = NewArray0[Int](world_size)
+      displs(0) = 0
+      for (k <- 1 until world_size) {
         displs(k) = displs(k - 1) + recvcounts(k - 1)
       }
-      mpi_gatherv(redbufs.slice(j * total_len, -1L), M(world_size * world_rank + j), mpi_char, tmp, recvcounts, displs, mpi_char, j.toInt, mpi_comm_world)
+      mpi_gatherv(redbufs.slice(j * total_len, -1L), M(world_size * world_rank + j).toInt, mpi_char, tmp, recvcounts, displs, mpi_char, j, mpi_comm_world)
 
       if (world_rank == j) {
         val z = ht_create()
