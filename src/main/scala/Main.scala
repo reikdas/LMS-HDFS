@@ -9,15 +9,15 @@ import scala.collection.mutable.ListBuffer
 import sys.process._
 
 trait FileOps extends ScannerOps with LMSMore {
-  def readFile(fd: Rep[Int], buf: Rep[Array[Char]], size: Rep[Long]): RepArray[Char] = {
+  def readFile(fd: Rep[Int], buf: Rep[LongArray[Char]], size: Rep[Long]): RepArray[Char] = {
     val readlen = libFunction[Int]("read", Unwrap(fd), Unwrap(buf), Unwrap(size))(Seq[Int](), Seq(1), Set())
     RepArray[Char](buf, readlen)
   }
 
-  def mmapFile(fd: Rep[Int], buf: Rep[Array[Char]], size: Rep[Long]): RepArray[Char] = {
-    val newbuf = mmap[Char](fd, size)
-    RepArray[Char](newbuf, size.toInt)
-  }
+//  def mmapFile(fd: Rep[Int], buf: Rep[Array[Char]], size: Rep[Long]): RepArray[Char] = {
+//    val newbuf = mmap[Char](fd, size)
+//    RepArray[Char](newbuf, size.toInt)
+//  }
 }
 
 @virtualize
@@ -26,7 +26,7 @@ trait HashMapOps extends LibFunction with ArrayOps {
 
   def ht_create() = libFunction[Array[ht]]("ht_create")(Seq(), Seq(), Set())
 
-  def ht_get(tab: Rep[Array[ht]], arr: Rep[Array[Char]]) = {
+  def ht_get(tab: Rep[Array[ht]], arr: Rep[LongArray[Char]]) = {
     val effectkey = arr match {
       case EffectView(x, base) => base
       case _ => arr
@@ -34,7 +34,7 @@ trait HashMapOps extends LibFunction with ArrayOps {
     libFunction2[Int]("ht_get", Unwrap(tab), Unwrap(arr))(Seq(Unwrap(tab), Unwrap(effectkey)), Seq(), Set())
   }
 
-  def ht_set(tab: Rep[Array[ht]], arr: Rep[Array[Char]], value: Rep[Int]) = {
+  def ht_set(tab: Rep[Array[ht]], arr: Rep[LongArray[Char]], value: Rep[Int]) = {
     val effectkey = arr match {
       case EffectView(x, base) => base
       case _ => arr
@@ -68,22 +68,22 @@ trait CharArrayOps extends LibFunction with LMSMore with StringOps with Ordering
   def strncpy(str1: Rep[Array[Char]], str2: Rep[Array[Char]], length: Int) =
     libFunction[Array[Char]]("strncpy", Unwrap(str1), Unwrap(str2), Unwrap(length))(Seq[Int](0, 1, 2), Seq(0), Set())
 
-  def hashCode(str: Rep[Array[Char]], len: Rep[Int]) = {
-    var hashVal = 0
-    var i = 0
-    while ((i: Rep[Int]) < len) {
+  def hashCode(str: Rep[LongArray[Char]], len: Rep[Long]) = {
+    var hashVal = 0L
+    var i = 0L
+    while (i < len) {
       val off = str(i).toInt
       if (off < 0) {
-        hashVal = 0
+        hashVal = 0L
       } else {
-        hashVal = off + (31 * hashVal)
+        hashVal = off + ((31L * hashVal) % (2L<<32L))
       }
       i += 1
     }
     hashVal
   }
 
-  def strlen(arr: Rep[Array[Char]]) = {
+  def strlen(arr: Rep[LongArray[Char]]) = {
     val effectkey = arr match {
       case EffectView(x, base) => base
       case _ => arr
@@ -95,14 +95,14 @@ trait CharArrayOps extends LibFunction with LMSMore with StringOps with Ordering
 @virtualize
 trait LMSMore extends ArrayOps with LibFunction {
 
-  case class RepArray[T: Manifest](value: Rep[Array[T]], length: Rep[Int]) {
-    def apply(idx: Rep[Int]): Rep[T] = value(idx)
+  case class RepArray[T: Manifest](value: Rep[LongArray[T]], length: Rep[Int]) {
+    def apply(idx: Rep[Long]): Rep[T] = value(idx)
 
-    def update(idx: Rep[Int], something: Rep[T]): Unit = {
+    def update(idx: Rep[Long], something: Rep[T]): Unit = {
       value(idx) = something
     }
 
-    def slice(s: Rep[Int], e: Rep[Int]) = value.slice(s, e)
+    def slice(s: Rep[Long], e: Rep[Long]) = value.slice(s, e)
 
     def free = value.free
   }
@@ -201,9 +201,21 @@ trait HDFSOps {
 @virtualize
 trait MapReduceOps extends HDFSOps with FileOps with MPIOps with CharArrayOps with SizeTOps with HashMapOps {
 
+  def memcpy2[T: Manifest](destination: Rep[LongArray[T]], source: Rep[LongArray[T]], num: Rep[Long]) = {
+    val desteffectkey = destination match {
+      case EffectView(x, base) => base
+      case _ => destination
+    }
+    val srceffectkey = source match {
+      case EffectView(x, base) => base
+      case _ => source
+    }
+    libFunction2[Unit]("memcpy", Unwrap(destination), Unwrap(source), Unwrap(num))(Seq(Unwrap(srceffectkey)), Seq(Unwrap(desteffectkey)), Set())
+  }
+
 
   def HDFSExec(filename: String) = {
-    val paths = ListToArr(GetPaths(filename))
+    val paths = ListToArr(GetPaths(filename).take(2))
 
     // MPI initialize
     var world_size = 0
@@ -219,7 +231,7 @@ trait MapReduceOps extends HDFSOps with FileOps with MPIOps with CharArrayOps wi
     //    if (paths.length % world_size != 0) remaining_map = paths.length % world_size
 
     //    if (world_rank < world_size) {
-    val buf = NewArray0[Char](GetBlockLen() + 1)
+    val buf = NewLongArray[Char](GetBlockLen() + 1, Some(0))
 
     //      for (i <- 0 until paths.length) {
     //        if (i % world_size == world_rank) {
@@ -233,66 +245,67 @@ trait MapReduceOps extends HDFSOps with FileOps with MPIOps with CharArrayOps wi
     val total_len = paths.length * GetBlockLen()
 
     // Each row r is the data being sent to reducer r
-    val redbufs = NewArray0[Char](world_size * total_len)
+    val redbufs = NewLongArray[Char](world_size * total_len, Some(0))
     // Storing number of chars to be sent to reducer idx
-    val chars_per_reducer = NewArray0[Int](world_size);
+    val chars_per_reducer = NewLongArray[Long](world_size.toLong, Some(0));
 
-    var start = 0
+    var start = 0L
     while (start < fpointer.length) {
-      while (isspace(fpointer(start)) && start < (fpointer.length)) start = start + 1
+      while (start < (fpointer.length) && isspace(fpointer(start))) start = start + 1
       if (start < fpointer.length) {
-        var end = start + 1
+        var end = start + 1L
         while ((end < fpointer.length) && !isspace(fpointer(end))) end = end + 1
         val off = if (end == fpointer.length) 1 else 0
         val len = end - start - off
         // NOTE: The end in a slice doesn't matter
-        val which_reducer = hashCode(fpointer.slice(start, end), len) % world_size
-        memcpy(
+        val which_reducer = hashCode(fpointer.slice(start, end), len) % world_size.toLong
+        memcpy2(
           redbufs.slice(which_reducer * total_len + chars_per_reducer(which_reducer), which_reducer * total_len + chars_per_reducer(which_reducer) + len),
           fpointer.slice(start, end),
-          SizeT(len))
+          len)
         redbufs(which_reducer * total_len + chars_per_reducer(which_reducer) + len) = '\0'
         chars_per_reducer(which_reducer) = chars_per_reducer(which_reducer) + 1 + len
         start = end
       }
     }
 
-    val M = NewArray0[Int](world_size * world_size)
-    mpi_allgather(chars_per_reducer, world_size, mpi_int, M, world_size, mpi_int, mpi_comm_world)
+    val M = NewLongArray[Long](world_size * world_size, Some(0))
+    mpi_allgather(chars_per_reducer, world_size.toLong, mpi_long, M, world_size.toLong, mpi_long, mpi_comm_world)
 
-    var num_elem_for_red = 0
-    for (j <- 0 until world_size) {
+    var num_elem_for_red = 0L
+    for (j <- 0L until world_size.toLong) {
       num_elem_for_red = num_elem_for_red + M(world_size * j + world_rank)
     }
 
-    val recv_buf = NewArray0[Char](num_elem_for_red)
+    val recv_buf = NewLongArray[Char](num_elem_for_red, Some(0))
 
-    for (j <- 0 until world_size) {
-      val tmp: Rep[Array[Char]] = if (world_rank == j) recv_buf else `null`[Array[Char]]
-      val recvcounts = NewArray0[Int](world_size)
-      for (k <- 0 until world_size) {
+    for (j <- 0L until world_size.toLong) {
+      printf("Proc %d\n: idx = %lu\n", world_rank, j)
+      val tmp: Rep[LongArray[Char]] = if (world_rank == j) recv_buf else `null`[LongArray[Char]]
+      val recvcounts = NewLongArray[Long](world_size.toLong, Some(0))
+      for (k <- 0L until world_size.toLong) {
         recvcounts(k) = M(world_size * k + j)
       }
-      val displs = NewArray0[Int](world_size)
-      displs(0) = 0
-      for (k <- 1 until world_size) {
+      val displs = NewLongArray[Long](world_size.toLong, Some(0))
+      displs(0L) = 0L
+      for (k <- 1L until world_size.toLong) {
         displs(k) = displs(k - 1) + recvcounts(k - 1)
       }
-      mpi_gatherv(redbufs.slice(j * total_len, -1), M(world_size * world_rank + j), mpi_char, tmp, recvcounts, displs, mpi_char, j, mpi_comm_world)
+      mpi_gatherv(redbufs.slice(j * total_len, -1L), M(world_size * world_rank + j), mpi_char, tmp, recvcounts, displs, mpi_char, j.toInt, mpi_comm_world)
 
       if (world_rank == j) {
         val z = ht_create()
-        var spointer = 0
+        var spointer = 0L
         while (spointer < num_elem_for_red) {
-          val len = strlen(tmp.slice(spointer, -1))
-          var value = ht_get(z, tmp.slice(spointer, -1))
+          val len = strlen(tmp.slice(spointer, -1L))
+          var value = ht_get(z, tmp.slice(spointer, -1L))
           //printf("%d\n", tmp(0))
-          if (value == -1) {
+          if (value == -1L) {
             value = 1
           } else {
             value = value + 1
           }
-          ht_set(z, tmp.slice(spointer, -1), value)
+          ht_set(z, tmp.slice(spointer, -1L), value)
           spointer = spointer + len + 1
         }
         //val dd = ht_get(z, tmp)
