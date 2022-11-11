@@ -26,9 +26,21 @@ trait HashMapOps extends LibFunction with ArrayOps {
 
   def ht_create() = libFunction[Array[ht]]("ht_create")(Seq(), Seq(), Set())
 
-  def ht_get(tab: Rep[Array[ht]], arr: Rep[Array[Char]]) = libFunction[Int]("ht_get", Unwrap(tab), Unwrap(arr))(Seq(0, 1), Seq(), Set())
+  def ht_get(tab: Rep[Array[ht]], arr: Rep[Array[Char]]) = {
+    val effectkey = arr match {
+      case EffectView(x, base) => base
+      case _ => arr
+    }
+    libFunction2[Int]("ht_get", Unwrap(tab), Unwrap(arr))(Seq(Unwrap(tab), Unwrap(effectkey)), Seq(), Set())
+  }
 
-  def ht_set(tab: Rep[Array[ht]], arr: Rep[Array[Char]], value: Rep[Int]) = libFunction[Unit]("ht_set", Unwrap(tab), Unwrap(arr), Unwrap(value))(Seq(0, 1), Seq(0), Set())
+  def ht_set(tab: Rep[Array[ht]], arr: Rep[Array[Char]], value: Rep[Int]) = {
+    val effectkey = arr match {
+      case EffectView(x, base) => base
+      case _ => arr
+    }
+    libFunction2[Unit]("ht_set", Unwrap(tab), Unwrap(arr), Unwrap(value))(Seq(Unwrap(tab), Unwrap(effectkey)), Seq(Unwrap(tab)), Set())
+  }
 
   class hti
 
@@ -59,14 +71,25 @@ trait CharArrayOps extends LibFunction with LMSMore with StringOps with Ordering
   def hashCode(str: Rep[Array[Char]], len: Rep[Int]) = {
     var hashVal = 0
     var i = 0
-    while ((i: Rep[Int]) < str.length) {
-      hashVal = str(i).toInt + (31 * hashVal)
+    while ((i: Rep[Int]) < len) {
+      val off = str(i).toInt
+      if (off < 0) {
+        hashVal = 0
+      } else {
+        hashVal = off + (31 * hashVal)
+      }
       i += 1
     }
     hashVal
   }
 
-  def strlen(arr: Rep[Array[Char]]) = libFunction[Int]("strlen", Unwrap(arr))(Seq(0), Seq(), Set())
+  def strlen(arr: Rep[Array[Char]]) = {
+    val effectkey = arr match {
+      case EffectView(x, base) => base
+      case _ => arr
+    }
+    libFunction2[Int]("strlen", Unwrap(arr))(Seq(Unwrap(effectkey)), Seq(), Set())
+  }
 }
 
 @virtualize
@@ -190,109 +213,106 @@ trait MapReduceOps extends HDFSOps with FileOps with MPIOps with CharArrayOps wi
     mpi_comm_rank(mpi_comm_world, world_rank)
 
     // Allocate mappers and reducers to processes
-    if (world_size > paths.length) world_size = paths.length // max_procs = num_blocks
-    val blocks_per_proc = paths.length / world_size
-    var remaining_map = 0 // Num_blocks that can't be evenly divided among procs
-    if (paths.length % world_size != 0) remaining_map = paths.length % world_size
+    //    if (world_size > paths.length) world_size = paths.length // max_procs = num_blocks
+    //    val blocks_per_proc = paths.length / world_size
+    //    var remaining_map = 0 // Num_blocks that can't be evenly divided among procs
+    //    if (paths.length % world_size != 0) remaining_map = paths.length % world_size
 
-    if (world_rank < world_size) {
-      val buf = NewArray[Char](GetBlockLen() + 1)
+    //    if (world_rank < world_size) {
+    val buf = NewArray0[Char](GetBlockLen() + 1)
 
-      for (i <- 0 until paths.length) {
-        if (i % world_size == world_rank) {
+    //      for (i <- 0 until paths.length) {
+    //        if (i % world_size == world_rank) {
 
-          // Get buffer of chars from file
-          val idx = (world_rank * blocks_per_proc) + i
-          val block_num = open(paths(idx))
-          val size = filelen(block_num)
-          val readbuf = readFile(block_num, buf, size)
+    // Get buffer of chars from file
+    val idx = world_rank
+    val block_num = open(paths(idx))
+    val size = filelen(block_num)
+    val fpointer = readFile(block_num, buf, size)
 
-          val total_len = paths.length * GetBlockLen()
+    val total_len = paths.length * GetBlockLen()
 
-          // Each row r is the data being sent to reducer r
-          val redbufs = NewArray[Char](world_size * total_len)
-          // Storing number of chars to be sent to reducer idx
-          val chars_per_reducer = NewArray0[Int](world_size);
+    // Each row r is the data being sent to reducer r
+    val redbufs = NewArray0[Char](world_size * total_len)
+    // Storing number of chars to be sent to reducer idx
+    val chars_per_reducer = NewArray0[Int](world_size);
 
-          var start = 0
-          while (start < readbuf.length - 1) {
-            while (isspace(readbuf(start)) && start < (readbuf.length - 1)) start = start + 1
-            var end = start + 1
-            while (!isspace(readbuf(end)) && (end < readbuf.length)) end = end + 1
-            val len = end - start
-            // NOTE: The end in a slice doesn't matter
-            val which_reducer = hashCode(readbuf.slice(start, end), len) % world_size
-            val dest = memcpy(
-              redbufs.slice(which_reducer * total_len + chars_per_reducer(which_reducer), which_reducer * total_len + chars_per_reducer(which_reducer) + len),
-              readbuf.slice(start, end),
-              SizeT(len))
-            printf("%c\n", dest(0))
-            redbufs(which_reducer * total_len + chars_per_reducer(which_reducer) + len + 1) = '\0'
-            if (end == readbuf.length) {
-              chars_per_reducer(which_reducer) = chars_per_reducer(which_reducer) + len
-            } else {
-              chars_per_reducer(which_reducer) = chars_per_reducer(which_reducer) + 1 + len
-            }
-            start = end
+    var start = 0
+    while (start < fpointer.length) {
+      while (isspace(fpointer(start)) && start < (fpointer.length)) start = start + 1
+      if (start < fpointer.length) {
+        var end = start + 1
+        while ((end < fpointer.length) && !isspace(fpointer(end))) end = end + 1
+        val off = if (end == fpointer.length) 1 else 0
+        val len = end - start - off
+        // NOTE: The end in a slice doesn't matter
+        val which_reducer = hashCode(fpointer.slice(start, end), len) % world_size
+        memcpy(
+          redbufs.slice(which_reducer * total_len + chars_per_reducer(which_reducer), which_reducer * total_len + chars_per_reducer(which_reducer) + len),
+          fpointer.slice(start, end),
+          SizeT(len))
+        redbufs(which_reducer * total_len + chars_per_reducer(which_reducer) + len) = '\0'
+        chars_per_reducer(which_reducer) = chars_per_reducer(which_reducer) + 1 + len
+        start = end
+      }
+    }
+
+    val M = NewArray0[Int](world_size * world_size)
+    mpi_allgather(chars_per_reducer, world_size, mpi_int, M, world_size, mpi_int, mpi_comm_world)
+
+    var num_elem_for_red = 0
+    for (j <- 0 until world_size) {
+      num_elem_for_red = num_elem_for_red + M(world_size * j + world_rank)
+    }
+
+    val recv_buf = NewArray0[Char](num_elem_for_red)
+
+    for (j <- 0 until world_size) {
+      val tmp: Rep[Array[Char]] = if (world_rank == j) recv_buf else `null`[Array[Char]]
+      val recvcounts = NewArray0[Int](world_size)
+      for (k <- 0 until world_size) {
+        recvcounts(k) = M(world_size * k + j)
+      }
+      val displs = NewArray0[Int](world_size)
+      displs(0) = 0
+      for (k <- 1 until world_size) {
+        displs(k) = displs(k - 1) + recvcounts(k - 1)
+      }
+      mpi_gatherv(redbufs.slice(j * total_len, -1), M(world_size * world_rank + j), mpi_char, tmp, recvcounts, displs, mpi_char, j, mpi_comm_world)
+
+      if (world_rank == j) {
+        val z = ht_create()
+        var spointer = 0
+        while (spointer < num_elem_for_red) {
+          val len = strlen(tmp.slice(spointer, -1))
+          var value = ht_get(z, tmp.slice(spointer, -1))
+          //printf("%d\n", tmp(0))
+          if (value == -1) {
+            value = 1
+          } else {
+            value = value + 1
           }
-
-          val M = NewArray[Int](world_size * world_size)
-          mpi_allgather(chars_per_reducer, world_size, mpi_int, M, world_size, mpi_int, mpi_comm_world)
-
-          var num_elem_for_red = 0
-          for (j <- 0 until world_size) {
-            num_elem_for_red = num_elem_for_red + M(world_size * j + world_rank)
-          }
-
-          val recv_buf = NewArray[Char](num_elem_for_red)
-
-          for (j <- 0 until world_size) {
-            val tmp: Rep[Array[Char]] = if (world_rank == j) recv_buf else `null`[Array[Char]]
-            val recvcounts = NewArray[Int](world_size)
-            for (k <- 0 until world_size) {
-              recvcounts(j) = M(world_size * k + j)
-            }
-            val displs = NewArray[Int](world_size)
-            displs(0) = 0
-            for (k <- 1 until world_size) {
-              displs(j) = displs(k - 1) + recvcounts(k - 1)
-            }
-            mpi_gatherv(redbufs.slice(j * total_len, -1), M(world_size * world_rank + j), mpi_char, tmp, recvcounts, displs, mpi_char, j, mpi_comm_world)
-                        printf("%lu\n", tmp(0))
-
-            if (world_rank == j) {
-              val z = ht_create()
-              var spointer = 0
-              while (spointer < num_elem_for_red) {
-                val len = strlen(tmp.slice(spointer, -1))
-                var value = ht_get(z, tmp.slice(spointer, -1))
-                //printf("%d\n", tmp(0))
-                if (value == -1) {
-                  value = 1
-                } else {
-                  value = value + 1
-                }
-                ht_set(z, tmp.slice(spointer, -1), value)
-                spointer = spointer + len + 1
-              }
-              //val dd = ht_get(z, tmp)
-              //              printf("%d", dd)
-              val it = ht_iterator(z)
-              while (ht_next(it)) {
-                printf("%s %d\n", hti_key(it), hti_value(it))
-              }
-            }
-            recvcounts.free
-            displs.free
-          }
-          redbufs.free
-          chars_per_reducer.free
-          M.free
-          recv_buf.free
+          ht_set(z, tmp.slice(spointer, -1), value)
+          spointer = spointer + len + 1
+        }
+        //val dd = ht_get(z, tmp)
+        //              printf("%d", dd)
+        val it = ht_iterator(z)
+        while (ht_next(it)) {
+          printf("%s %d\n", hti_key(it), hti_value(it))
         }
       }
-      buf.free
+      recvcounts.free
+      displs.free
     }
+    redbufs.free
+    chars_per_reducer.free
+    M.free
+    recv_buf.free
+    //        }
+    //      }
+    buf.free
+    //    }
     paths.free
     mpi_finalize()
   }
