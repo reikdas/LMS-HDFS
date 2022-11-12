@@ -1,14 +1,14 @@
 import lms.core.stub._
 import lms.macros.SourceContext
 import lms.core.{Backend, virtualize}
-import lms.thirdparty.{CCodeGenCMacro, CCodeGenLibFunction, CCodeGenMPI, CCodeGenSizeTOps, LibFunction, MPIOps, ScannerOps, SizeTOps}
+import lms.thirdparty.{CCodeGenCMacro, CCodeGenLibFunction, CCodeGenMPI, CCodeGenScannerOps, LibFunction, MPIOps, ScannerOps}
 import lms.collection.mutable.ArrayOps
 
 import java.io.File
 import scala.collection.mutable.ListBuffer
 import sys.process._
 
-trait FileOps extends ScannerOps with LMSMore {
+trait FileOps extends LMSMore {
   def readFile(fd: Rep[Int], buf: Rep[LongArray[Char]], size: Rep[Long]): RepArray[Char] = {
     val readlen = libFunction[Int]("read", Unwrap(fd), Unwrap(buf), Unwrap(size))(Seq[Int](), Seq(1), Set())
     RepArray[Char](buf, readlen)
@@ -21,7 +21,7 @@ trait FileOps extends ScannerOps with LMSMore {
 }
 
 @virtualize
-trait HashMapOps extends LibFunction with ArrayOps {
+trait HashMapOps extends LMSMore {
   class ht
 
   def ht_create() = libFunction[Array[ht]]("ht_create")(Seq(), Seq(), Set())
@@ -54,7 +54,7 @@ trait HashMapOps extends LibFunction with ArrayOps {
 }
 
 @virtualize
-trait CharArrayOps extends LibFunction with LMSMore with StringOps with OrderingOps {
+trait CharArrayOps extends LMSMore with OrderingOps {
   case class RepString(arr: RepArray[Char], start: Rep[Int], length: Rep[Int]) {
     def apply(idx: Rep[Int]) = arr(idx)
 
@@ -76,7 +76,7 @@ trait CharArrayOps extends LibFunction with LMSMore with StringOps with Ordering
       if (off < 0) {
         hashVal = 0L
       } else {
-        hashVal = off + ((31L * hashVal) % (2L<<32L))
+        hashVal = off + ((31L * hashVal) % (2L << 32L))
       }
       i += 1
     }
@@ -92,8 +92,30 @@ trait CharArrayOps extends LibFunction with LMSMore with StringOps with Ordering
   }
 }
 
+trait MyMPIOps extends LibFunction with ArrayOps with MPIOps {
+  def mpi_send[T: Manifest](data: Rep[T], count: Rep[Int], datatype: Rep[MPIDataType], dest: Rep[Int], tag: Rep[Int], world: Rep[MPIComm]) =
+    unchecked[Unit]("MPI_Send(&", data, ", ", count, ",", datatype, ", ", dest, ", ", tag, ", ", world, ")")
+
+  def mpi_rec[T: Manifest](data: Rep[T], count: Rep[Int], datatype: Rep[MPIDataType], source: Rep[Int], tag: Rep[Int], world: Rep[MPIComm]) =
+    unchecked[Unit]("MPI_Recv(&", data, ", ", count, ",", datatype, ", ", source, ", ", tag, ", ", world, ", MPI_STATUS_IGNORE)")
+
+  def mpi_allgather(sendbuf: Rep[LongArray[Long]], sendcount: Rep[Long], sendtype: Rep[MPIDataType], recvbuf: Rep[LongArray[Long]],
+                    recvcount: Rep[Long], recvtype: Rep[MPIDataType], comm: Rep[MPIComm]) =
+    libFunction[Unit]("MPI_Allgather", Unwrap(sendbuf), Unwrap(sendcount), Unwrap(sendtype), Unwrap(recvbuf), Unwrap(recvcount), Unwrap(recvtype), Unwrap(comm))(Seq(0, 1, 2, 3, 4, 5, 6), Seq(3), Set())
+
+  def mpi_gatherv(sendbuf: Rep[LongArray[Char]], sendcount: Rep[Int], sendtype: Rep[MPIDataType], recvbuf: Rep[LongArray[Char]],
+                  recvcounts: Rep[Array[Int]], displs: Rep[Array[Int]], recvtype: Rep[MPIDataType], root: Rep[Int], comm: Rep[MPIComm]) = {
+    val effectkey = recvbuf match {
+      case EffectView(x, base) => base
+      case _ => recvbuf
+    }
+    libFunction[Unit]("MPI_Gatherv", Unwrap(sendbuf), Unwrap(sendcount), Unwrap(sendtype), Unwrap(recvbuf), Unwrap(recvcounts),
+      Unwrap(displs), Unwrap(recvtype), Unwrap(root), Unwrap(comm))(Seq(0, 1, 2, 3, 4, 5, 6, 7, 8), Seq(3), Set(), Unwrap(effectkey))
+  }
+}
+
 @virtualize
-trait LMSMore extends ArrayOps with LibFunction {
+trait LMSMore extends ArrayOps with LibFunction with ScannerOps {
 
   case class RepArray[T: Manifest](value: Rep[LongArray[T]], length: Rep[Int]) {
     def apply(idx: Rep[Long]): Rep[T] = value(idx)
@@ -115,7 +137,31 @@ trait LMSMore extends ArrayOps with LibFunction {
     arr
   }
 
+  def NewArray0[T: Manifest](x: Rep[Int]): Rep[Array[T]] = {
+    Wrap[Array[T]](Adapter.g.reflectMutable("NewArray", Unwrap(x), Backend.Const(0)))
+  }
+
   def `null`[T: Manifest]: Rep[T] = Wrap[T](Backend.Const(null))
+
+  def mmap2[T: Manifest](fd: Rep[Int], len: Rep[Long]) = (libFunction[LongArray[T]]("mmap",
+    lms.core.Backend.Const(0), Unwrap(len), Unwrap(prot), Unwrap(fd), lms.core.Backend.Const(0))(Seq[Int](), Seq[Int](), Set[Int]()))
+
+  def libFunction2[T: Manifest](m: String, rhs: lms.core.Backend.Exp*)(rkeys: Seq[lms.core.Backend.Exp], wkeys: Seq[lms.core.Backend.Exp], pkeys: Set[Int]): Rep[T] = {
+    val defs = Seq(lms.core.Backend.Const(m), lms.core.Backend.Const(pkeys)) ++ rhs
+    Wrap[T](Adapter.g.reflectEffect("lib-function", defs: _*)(rkeys: _*)(wkeys: _*))
+  }
+
+  def memcpy2[T: Manifest](destination: Rep[LongArray[T]], source: Rep[LongArray[T]], num: Rep[Long]) = {
+    val desteffectkey = destination match {
+      case EffectView(x, base) => base
+      case _ => destination
+    }
+    val srceffectkey = source match {
+      case EffectView(x, base) => base
+      case _ => source
+    }
+    libFunction2[Unit]("memcpy", Unwrap(destination), Unwrap(source), Unwrap(num))(Seq(Unwrap(srceffectkey)), Seq(Unwrap(desteffectkey)), Set())
+  }
 }
 
 trait HDFSOps {
@@ -199,20 +245,7 @@ trait HDFSOps {
 }
 
 @virtualize
-trait MapReduceOps extends HDFSOps with FileOps with MPIOps with CharArrayOps with SizeTOps with HashMapOps {
-
-  def memcpy2[T: Manifest](destination: Rep[LongArray[T]], source: Rep[LongArray[T]], num: Rep[Long]) = {
-    val desteffectkey = destination match {
-      case EffectView(x, base) => base
-      case _ => destination
-    }
-    val srceffectkey = source match {
-      case EffectView(x, base) => base
-      case _ => source
-    }
-    libFunction2[Unit]("memcpy", Unwrap(destination), Unwrap(source), Unwrap(num))(Seq(Unwrap(srceffectkey)), Seq(Unwrap(desteffectkey)), Set())
-  }
-
+trait MapReduceOps extends HDFSOps with FileOps with MyMPIOps with CharArrayOps with HashMapOps {
 
   def HDFSExec(filename: String) = {
     val paths = ListToArr(GetPaths(filename))
@@ -319,6 +352,7 @@ trait MapReduceOps extends HDFSOps with FileOps with MPIOps with CharArrayOps wi
     while (ht_next(it)) {
       printf("%s %d\n", hti_key(it), hti_value(it))
     }
+    close(block_num)
     redbufs.free
     chars_per_reducer.free
     M.free
@@ -337,7 +371,7 @@ object Main {
   def main(args: Array[String]): Unit = {
     val snippet = new DslDriverC[Int, Unit] with MapReduceOps {
       q =>
-      override val codegen = new DslGenC with CCodeGenLibFunction with CCodeGenMPI with CCodeGenCMacro with CCodeGenSizeTOps {
+      override val codegen = new DslGenC with CCodeGenLibFunction with CCodeGenMPI with CCodeGenCMacro with CCodeGenScannerOps {
         override def remap(m: Typ[_]): String =
           if (m <:< manifest[ht]) {
             "ht"
@@ -347,10 +381,8 @@ object Main {
             super.remap(m)
           }
 
-        registerHeader("\"scanner_header.h\"")
         registerHeader("<ctype.h>")
-        registerHeader("<string.h>")
-        registerHeader("\"ht.h\"")
+        registerHeader("src/main/resources/headers", "\"ht.h\"")
         val IR: q.type = q
       }
 

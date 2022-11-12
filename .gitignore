@@ -1,6 +1,5 @@
 *.class
 *.log
-headers/
 project/
 target/
 .bsp/
