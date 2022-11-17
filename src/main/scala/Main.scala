@@ -257,110 +257,100 @@ trait MapReduceOps extends HDFSOps with FileOps with MyMPIOps with CharArrayOps 
     mpi_comm_size(mpi_comm_world, world_size)
     mpi_comm_rank(mpi_comm_world, world_rank)
 
-    // Allocate mappers and reducers to processes
-    //    if (world_size > paths.length) world_size = paths.length // max_procs = num_blocks
-    //    val blocks_per_proc = paths.length / world_size
-    //    var remaining_map = 0 // Num_blocks that can't be evenly divided among procs
-    //    if (paths.length % world_size != 0) remaining_map = paths.length % world_size
+    if (world_rank < world_size) {
+      val buf = NewLongArray[Char](GetBlockLen() + 1, Some(0)) // Buffer to hold characters in file
 
-    //    if (world_rank < world_size) {
-    val buf = NewLongArray[Char](GetBlockLen() + 1, Some(0))
+      val total_len = paths.length * GetBlockLen()
+      // Each row r is the data being sent to reducer r
+      val redbufs = NewLongArray[Char](world_size * total_len, Some(0))
+      // Storing number of chars to be sent to reducer i
+      val chars_per_reducer = NewLongArray[Long](world_size.toLong, Some(0))
 
-    //      for (i <- 0 until paths.length) {
-    //        if (i % world_size == world_rank) {
+      for (i <- 0 until paths.length) {
+        if (i % world_size == world_rank) {
 
-    // Get buffer of chars from file
-    val idx = world_rank
-    val block_num = open(paths(idx))
-    val size = filelen(block_num)
-    val fpointer = mmapFile(block_num, buf, size)
+          // Get buffer of chars from file
+          val block_num = open(paths(i))
+          val size = filelen(block_num)
+          val fpointer = mmapFile(block_num, buf, size)
 
-    val total_len = paths.length * GetBlockLen()
-
-    // Each row r is the data being sent to reducer r
-    val redbufs = NewLongArray[Char](world_size * total_len, Some(0))
-    // Storing number of chars to be sent to reducer idx
-    val chars_per_reducer = NewLongArray[Long](world_size.toLong, Some(0));
-
-    var start = 0L
-    while (start < fpointer.length) {
-      while (start < (fpointer.length) && isspace(fpointer(start))) start = start + 1
-      if (start < fpointer.length) {
-        var end = start + 1L
-        while ((end < fpointer.length) && !isspace(fpointer(end))) end = end + 1
-        val off = if (end == fpointer.length) 1 else 0
-        val len = end - start - off
-        // NOTE: The end in a slice doesn't matter
-        val which_reducer = hashCode(fpointer.slice(start, end), len) % world_size.toLong
-        memcpy2(
-          redbufs.slice(which_reducer * total_len + chars_per_reducer(which_reducer), which_reducer * total_len + chars_per_reducer(which_reducer) + len),
-          fpointer.slice(start, end),
-          len)
-        redbufs(which_reducer * total_len + chars_per_reducer(which_reducer) + len) = '\0'
-        chars_per_reducer(which_reducer) = chars_per_reducer(which_reducer) + 1 + len
-        start = end
-      }
-    }
-
-    val M = NewLongArray[Long](world_size * world_size, Some(0))
-    mpi_allgather(chars_per_reducer, world_size.toLong, mpi_long, M, world_size.toLong, mpi_long, mpi_comm_world)
-
-    var num_elem_for_red = 0L
-    for (j <- 0L until world_size.toLong) {
-      num_elem_for_red = num_elem_for_red + M(world_size * j + world_rank)
-    }
-
-    val recv_buf = NewLongArray[Char](num_elem_for_red, Some(0))
-
-    val z = ht_create()
-    for (j <- 0 until world_size) {
-      val tmp: Rep[LongArray[Char]] = if (world_rank == j) recv_buf else `null`[LongArray[Char]]
-      val recvcounts = NewArray0[Int](world_size)
-      for (k <- 0 until world_size) {
-        recvcounts(k) = M(world_size * k + j).toInt
-      }
-      val displs = NewArray0[Int](world_size)
-      displs(0) = 0
-      for (k <- 1 until world_size) {
-        displs(k) = displs(k - 1) + recvcounts(k - 1)
-      }
-      mpi_gatherv(redbufs.slice(j * total_len, -1L), M(world_size * world_rank + j).toInt, mpi_char, tmp, recvcounts, displs, mpi_char, j, mpi_comm_world)
-
-      if (world_rank == j) {
-
-        var spointer = 0L
-        while (spointer < num_elem_for_red) {
-          val len = strlen(tmp.slice(spointer, -1L))
-          var value = ht_get(z, tmp.slice(spointer, -1L))
-          //printf("%d\n", tmp(0))
-          if (value == -1L) {
-            value = 1
-          } else {
-            value = value + 1
+          var start = 0L
+          while (start < fpointer.length) {
+            while (start < (fpointer.length) && isspace(fpointer(start))) start = start + 1
+            if (start < fpointer.length) {
+              var end = start + 1L
+              while ((end < fpointer.length) && !isspace(fpointer(end))) end = end + 1
+              val off = if (end == fpointer.length) 1 else 0
+              val len = end - start - off
+              // NOTE: The end in a slice doesn't matter
+              val which_reducer = hashCode(fpointer.slice(start, end), len) % world_size.toLong
+              memcpy2(
+                redbufs.slice(which_reducer * total_len + chars_per_reducer(which_reducer), which_reducer * total_len + chars_per_reducer(which_reducer) + len),
+                fpointer.slice(start, end),
+                len)
+              redbufs(which_reducer * total_len + chars_per_reducer(which_reducer) + len) = '\0'
+              chars_per_reducer(which_reducer) = chars_per_reducer(which_reducer) + 1 + len
+              start = end
+            }
           }
-          ht_set(z, tmp.slice(spointer, -1L), value)
-          spointer = spointer + len + 1
+          close(block_num)
         }
-        //val dd = ht_get(z, tmp)
-        //              printf("%d", dd)
-
       }
-      recvcounts.free
-      displs.free
+
+      val M = NewLongArray[Long](world_size * world_size, Some(0))
+      mpi_allgather(chars_per_reducer, world_size.toLong, mpi_long, M, world_size.toLong, mpi_long, mpi_comm_world)
+
+      var num_elem_for_red = 0L
+      for (j <- 0L until world_size.toLong) {
+        num_elem_for_red = num_elem_for_red + M(world_size * j + world_rank)
+      }
+
+      val recv_buf = NewLongArray[Char](num_elem_for_red, Some(0))
+
+      val z = ht_create()
+      for (j <- 0 until world_size) {
+        val tmp: Rep[LongArray[Char]] = if (world_rank == j) recv_buf else `null`[LongArray[Char]]
+        val recvcounts = NewArray0[Int](world_size)
+        for (k <- 0 until world_size) {
+          recvcounts(k) = M(world_size * k + j).toInt
+        }
+        val displs = NewArray0[Int](world_size)
+        displs(0) = 0
+        for (k <- 1 until world_size) {
+          displs(k) = displs(k - 1) + recvcounts(k - 1)
+        }
+        mpi_gatherv(redbufs.slice(j * total_len, -1L), M(world_size * world_rank + j).toInt, mpi_char, tmp, recvcounts, displs, mpi_char, j, mpi_comm_world)
+
+        if (world_rank == j) {
+
+          var spointer = 0L
+          while (spointer < num_elem_for_red) {
+            val len = strlen(tmp.slice(spointer, -1L))
+            var value = ht_get(z, tmp.slice(spointer, -1L))
+            //printf("%d\n", tmp(0))
+            if (value == -1L) {
+              value = 1
+            } else {
+              value = value + 1
+            }
+            ht_set(z, tmp.slice(spointer, -1L), value)
+            spointer = spointer + len + 1
+          }
+        }
+        recvcounts.free
+        displs.free
+      }
+      val it = ht_iterator(z)
+      while (ht_next(it)) {
+        printf("%s %d\n", hti_key(it), hti_value(it))
+      }
+
+      redbufs.free
+      chars_per_reducer.free
+      M.free
+      recv_buf.free
+      buf.free
     }
-    val it = ht_iterator(z)
-    while (ht_next(it)) {
-      printf("%s %d\n", hti_key(it), hti_value(it))
-    }
-    close(block_num)
-    redbufs.free
-    chars_per_reducer.free
-    M.free
-    recv_buf.free
-    //        }
-    //      }
-    buf.free
-    //    }
     paths.free
     mpi_finalize()
   }
