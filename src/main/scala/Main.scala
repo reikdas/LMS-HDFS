@@ -112,6 +112,8 @@ trait MyMPIOps extends LibFunction with ArrayOps with MPIOps {
     libFunction[Unit]("MPI_Gatherv", Unwrap(sendbuf), Unwrap(sendcount), Unwrap(sendtype), Unwrap(recvbuf), Unwrap(recvcounts),
       Unwrap(displs), Unwrap(recvtype), Unwrap(root), Unwrap(comm))(Seq(0, 1, 2, 3, 4, 5, 6, 7, 8), Seq(3), Set(), Unwrap(effectkey))
   }
+
+  def mpi_wtime() = unchecked[Double]("MPI_Wtime()")
 }
 
 @virtualize
@@ -247,10 +249,12 @@ trait HDFSOps extends LMSMore {
 @virtualize
 trait MapReduceOps extends HDFSOps with FileOps with MyMPIOps with CharArrayOps with HashMapOps {
 
-  def HDFSExec(paths: Rep[Array[String]]) = {
+  def HDFSExec(paths: Rep[Array[String]], bench: Boolean = false) = {
     // MPI initialize
     var world_size = 0
     var world_rank = 0
+
+    val start = mpi_wtime()
     mpi_init()
     mpi_comm_size(mpi_comm_world, world_size)
     mpi_comm_rank(mpi_comm_world, world_rank)
@@ -350,27 +354,10 @@ trait MapReduceOps extends HDFSOps with FileOps with MyMPIOps with CharArrayOps 
       buf.free
     }
     mpi_finalize()
-  }
-}
-
-trait MyCCodeGen extends CCodeGenLibFunction with CCodeGenMPI with CCodeGenCMacro with CCodeGenScannerOps {
-
-}
-
-trait CImpl { q =>
-  val codegen = new MyCCodeGen with HashMapOps with UtilOps {
-    override def remap(m: Typ[_]): String =
-      if (m <:< manifest[ht]) {
-        "ht"
-      } else if (m <:< manifest[hti]) {
-        "hti"
-      } else {
-        super.remap(m)
-      }
-
-    registerHeader("<ctype.h>")
-    registerHeader("src/main/resources/headers", "\"ht.h\"")
-    val IR: q.type = q
+    if (bench) {
+      val end = mpi_wtime()
+      printf("Proc %d spent %lf time.\n", world_rank, end - start)
+    }
   }
 }
 
@@ -394,19 +381,17 @@ object Main {
         val IR: q.type = q
       }
 
-      val out = new java.io.PrintStream("foo.c")
-
       @virtualize
       def snippet(dummy: Rep[Int]) = {
         val paths = GetPaths("/1G.txt")
-        val res = HDFSExec(paths)
+        val res = HDFSExec(paths, bench = true)
         paths.free
       }
 
-      def emitMyCode = {
-        codegen.emitSource[Int, Unit](wrapper, "Snippet", out)
+      def emitMyCode(path: String) = {
+        codegen.emitSource[Int, Unit](wrapper, "Snippet", new java.io.PrintStream(path))
       }
     }
-    snippet.emitMyCode
+    snippet.emitMyCode("foo.c")
   }
 }
