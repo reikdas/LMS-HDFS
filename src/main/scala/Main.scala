@@ -164,8 +164,8 @@ trait LMSMore extends ArrayOps with LibFunction with ScannerOps {
   }
 }
 
-trait HDFSOps {
-  def GetPaths(path: String): ListBuffer[String] = {
+trait HDFSOps extends LMSMore {
+  def GetPaths(path: String) = {
     val basepath =
       "hdfs getconf -confKey dfs.datanode.data.dir".!!.replaceAll("\n", "")
     val result = "hdfs fsck %s -files -blocks -locations".format(path)
@@ -235,7 +235,7 @@ trait HDFSOps {
       if (flag == 0)
         throw new Exception("Should be unreachable")
     }
-    nativepaths
+    ListToArr(nativepaths)
   }
 
   def GetBlockLen(): Long = {
@@ -247,9 +247,7 @@ trait HDFSOps {
 @virtualize
 trait MapReduceOps extends HDFSOps with FileOps with MyMPIOps with CharArrayOps with HashMapOps {
 
-  def HDFSExec(filename: String) = {
-    val paths = ListToArr(GetPaths(filename))
-
+  def HDFSExec(paths: Rep[Array[String]]) = {
     // MPI initialize
     var world_size = 0
     var world_rank = 0
@@ -351,8 +349,28 @@ trait MapReduceOps extends HDFSOps with FileOps with MyMPIOps with CharArrayOps 
       recv_buf.free
       buf.free
     }
-    paths.free
     mpi_finalize()
+  }
+}
+
+trait MyCCodeGen extends CCodeGenLibFunction with CCodeGenMPI with CCodeGenCMacro with CCodeGenScannerOps {
+
+}
+
+trait CImpl { q =>
+  val codegen = new MyCCodeGen with HashMapOps with UtilOps {
+    override def remap(m: Typ[_]): String =
+      if (m <:< manifest[ht]) {
+        "ht"
+      } else if (m <:< manifest[hti]) {
+        "hti"
+      } else {
+        super.remap(m)
+      }
+
+    registerHeader("<ctype.h>")
+    registerHeader("src/main/resources/headers", "\"ht.h\"")
+    val IR: q.type = q
   }
 }
 
@@ -376,11 +394,19 @@ object Main {
         val IR: q.type = q
       }
 
+      val out = new java.io.PrintStream("foo.c")
+
       @virtualize
       def snippet(dummy: Rep[Int]) = {
-        val res = HDFSExec("/1G.txt")
+        val paths = GetPaths("/1G.txt")
+        val res = HDFSExec(paths)
+        paths.free
+      }
+
+      def emitMyCode = {
+        codegen.emitSource[Int, Unit](wrapper, "Snippet", out)
       }
     }
-    println(snippet.code)
+    snippet.emitMyCode
   }
 }

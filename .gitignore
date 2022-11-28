@@ -6,3 +6,6 @@ target/
 .idea/
 
 hs_err_pid*
+
+# Test
+src/main/resources/testwc*

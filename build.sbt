@@ -3,9 +3,9 @@ version := "0.1"
 
 scalaVersion := "2.12.10"
 
-resolvers += Resolver.sonatypeRepo("snapshots")
+resolvers += Resolver.sonatypeRepo("releases")
 
-libraryDependencies += "org.scalatest" % "scalatest_2.12" % "3.0.4"
+libraryDependencies += "org.scalatest" % "scalatest_2.12" % "3.0.8" % "test"
 
 libraryDependencies += "org.scala-lang" % "scala-compiler" % scalaVersion.value % "compile"
 
