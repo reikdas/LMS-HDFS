@@ -349,7 +349,7 @@ trait MapReduceOps extends HDFSOps with FileOps with MyMPIOps with CharArrayOps 
           printf("%s %d\n", hti_key(it), hti_value(it))
         }
       } else {
-        Adapter.g.reflectUnsafe("printflag", Unwrap(z))
+        Adapter.g.reflectWrite("printflag", Unwrap(z))(Adapter.CTRL)
       }
 
       redbufs.free
@@ -382,7 +382,7 @@ object Main {
           }
 
         override def traverse(n: Node): Unit = n match {
-          case n @ Node(_, "printflag", _, _) => ???
+          case n @ Node(_, "printflag", _, _) =>
           case _ => super.traverse(n)
         }
 
@@ -394,7 +394,7 @@ object Main {
       @virtualize
       def snippet(dummy: Rep[Int]) = {
         val paths = GetPaths("/1G.txt")
-        val res = HDFSExec(paths, benchFlag = true, printFlag = false)
+        val res = HDFSExec(paths, benchFlag = true, printFlag = true)
         paths.free
       }
 
