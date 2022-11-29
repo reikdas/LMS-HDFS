@@ -60,14 +60,33 @@ class TestWC extends FunSuite {
     false
   }
 
-  val outcodepath = "src/test/resources/testwc.c"
-  snippet.emitMyCode(outcodepath)
-
+  val execname = "src/test/resources/testwc"
+  val outcountpath = "src/test/resources/testwc.txt"
   // FIXME: Don't hardcode paths
-  test("Test WC") {
+  val includeFlags = "-I /home/reikdas/lmshdfs/src/main/resources/headers/ -I /home/reikdas/Research/lms-clean/src/main/resources/headers/"
+
+  test("Wordcount 1G: num_blocks = num_procs") {
+    val outcodepath = "src/test/resources/testwc.c"
+    snippet.emitMyCode(outcodepath)
     val filesToDelete = new ListBuffer[String]()
-    val execname = "src/test/resources/testwc"
-    val outcountpath = "src/test/resources/testwc.txt"
+    filesToDelete += execname
+    filesToDelete += outcountpath
+    cleanup(filesToDelete.toList)
+    filesToDelete += outcodepath
+    val compile = "mpicc %s %s -o %s".format(outcodepath, includeFlags, execname)
+    compile.!!
+    val nprocs = 8
+    "mpirun -np %s %s 0".format(nprocs, execname) #>> new File(outcountpath) !
+    val sortcmd = "sort %s -o %s".format(outcountpath, outcountpath)
+    sortcmd.!!
+    assert(isEqual(Paths.get(outcountpath), Paths.get("src/test/resources/wc1G.txt")))
+    cleanup(filesToDelete.toList)
+  }
+
+  test("Wordcount 1G: num_blocks/2 = num_procs") {
+    val outcodepath = "src/test/resources/testwc.c"
+    snippet.emitMyCode(outcodepath)
+    val filesToDelete = new ListBuffer[String]()
     filesToDelete += execname
     filesToDelete += outcountpath
     cleanup(filesToDelete.toList)
@@ -75,7 +94,26 @@ class TestWC extends FunSuite {
     val includeFlags = "-I /home/reikdas/lmshdfs/src/main/resources/headers/ -I /home/reikdas/Research/lms-clean/src/main/resources/headers/"
     val compile = "mpicc %s %s -o %s".format(outcodepath, includeFlags, execname)
     compile.!!
-    val nprocs = 8
+    val nprocs = 4
+    "mpirun -np %s %s 0".format(nprocs, execname) #>> new File(outcountpath) !
+    val sortcmd = "sort %s -o %s".format(outcountpath, outcountpath)
+    sortcmd.!!
+    assert(isEqual(Paths.get(outcountpath), Paths.get("src/test/resources/wc1G.txt")))
+    cleanup(filesToDelete.toList)
+  }
+
+  test("Wordcount 1G: num_blocks%num_procs != 0") {
+    val outcodepath = "src/test/resources/testwc.c"
+    snippet.emitMyCode(outcodepath)
+    val filesToDelete = new ListBuffer[String]()
+    filesToDelete += execname
+    filesToDelete += outcountpath
+    cleanup(filesToDelete.toList)
+    filesToDelete += outcodepath
+    val includeFlags = "-I /home/reikdas/lmshdfs/src/main/resources/headers/ -I /home/reikdas/Research/lms-clean/src/main/resources/headers/"
+    val compile = "mpicc %s %s -o %s".format(outcodepath, includeFlags, execname)
+    compile.!!
+    val nprocs = 3
     "mpirun -np %s %s 0".format(nprocs, execname) #>> new File(outcountpath) !
     val sortcmd = "sort %s -o %s".format(outcountpath, outcountpath)
     sortcmd.!!
