@@ -1,5 +1,6 @@
 import lms.core.stub._
 import lms.macros.SourceContext
+import lms.core.Backend._
 import lms.core.{Backend, virtualize}
 import lms.thirdparty.{CCodeGenCMacro, CCodeGenLibFunction, CCodeGenMPI, CCodeGenScannerOps, LibFunction, MPIOps, ScannerOps}
 import lms.collection.mutable.ArrayOps
@@ -249,7 +250,7 @@ trait HDFSOps extends LMSMore {
 @virtualize
 trait MapReduceOps extends HDFSOps with FileOps with MyMPIOps with CharArrayOps with HashMapOps {
 
-  def HDFSExec(paths: Rep[Array[String]], bench: Boolean = false) = {
+  def HDFSExec(paths: Rep[Array[String]], benchFlag: Boolean = false, printFlag: Boolean = true) = {
     // MPI initialize
     var world_size = 0
     var world_rank = 0
@@ -342,9 +343,13 @@ trait MapReduceOps extends HDFSOps with FileOps with MyMPIOps with CharArrayOps 
         recvcounts.free
         displs.free
       }
-      val it = ht_iterator(z)
-      while (ht_next(it)) {
-        printf("%s %d\n", hti_key(it), hti_value(it))
+      if (printFlag) {
+        val it = ht_iterator(z)
+        while (ht_next(it)) {
+          printf("%s %d\n", hti_key(it), hti_value(it))
+        }
+      } else {
+        Adapter.g.reflectUnsafe("printflag", Unwrap(z))
       }
 
       redbufs.free
@@ -354,7 +359,7 @@ trait MapReduceOps extends HDFSOps with FileOps with MyMPIOps with CharArrayOps 
       buf.free
     }
     mpi_finalize()
-    if (bench) {
+    if (benchFlag) {
       val end = mpi_wtime()
       printf("Proc %d spent %lf time.\n", world_rank, end - start)
     }
@@ -376,6 +381,11 @@ object Main {
             super.remap(m)
           }
 
+        override def traverse(n: Node): Unit = n match {
+          case n @ Node(_, "printflag", _, _) => ???
+          case _ => super.traverse(n)
+        }
+
         registerHeader("<ctype.h>")
         registerHeader("src/main/resources/headers", "\"ht.h\"")
         val IR: q.type = q
@@ -384,7 +394,7 @@ object Main {
       @virtualize
       def snippet(dummy: Rep[Int]) = {
         val paths = GetPaths("/1G.txt")
-        val res = HDFSExec(paths, bench = true)
+        val res = HDFSExec(paths, benchFlag = true, printFlag = false)
         paths.free
       }
 
