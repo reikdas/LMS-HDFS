@@ -368,6 +368,23 @@ trait MapReduceOps extends HDFSOps with FileOps with MyMPIOps with CharArrayOps 
 object Main {
 
   def main(args: Array[String]): Unit = {
+
+    implicit class RegexOps(sc: StringContext) {
+      def r = new util.matching.Regex(sc.parts.mkString, sc.parts.tail.map(_ => "x"): _*)
+    }
+
+    val options: Map[String, Any] = args.toList.foldLeft(Map[String, Any]()) {
+      case (options, r"--loadFile=(\/\w+.txt)$e") => options + ("loadFile" -> e)
+      case (options, r"--writeFile=(\w+.c)$e") => options + ("writeFile" -> e)
+      case (options, "--bench") => options + ("bench" -> true)
+      case (options, "--print") => options + ("print" -> true)
+    }
+
+    val loadFile = options.getOrElse("loadFile", throw new RuntimeException("No load file")).toString
+    val writeFile = options.getOrElse("writeFile", throw new RuntimeException("No write file")).toString
+    val benchFlag: Boolean = if (options.exists(_._1 == "bench")) { options("bench").toString.toBoolean } else { false }
+    val printFlag: Boolean = if (options.exists(_._1 == "print")) { options("print").toString.toBoolean } else { true }
+
     val snippet = new DslDriverC[Int, Unit] with MapReduceOps {
       q =>
       override val codegen = new DslGenC with CCodeGenLibFunction with CCodeGenMPI with CCodeGenCMacro with CCodeGenScannerOps {
@@ -392,8 +409,8 @@ object Main {
 
       @virtualize
       def snippet(dummy: Rep[Int]) = {
-        val paths = GetPaths("/1G.txt")
-        val res = HDFSExec(paths, benchFlag = true, printFlag = false)
+        val paths = GetPaths(loadFile)
+        val res = HDFSExec(paths, benchFlag, printFlag)
         paths.free
       }
 
@@ -401,6 +418,6 @@ object Main {
         codegen.emitSource[Int, Unit](wrapper, "Snippet", new java.io.PrintStream(path))
       }
     }
-    snippet.emitMyCode("foo.c")
+    snippet.emitMyCode(writeFile)
   }
 }
