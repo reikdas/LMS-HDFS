@@ -19,6 +19,8 @@ val paradiseVersion = "2.1.0"
 
 addCompilerPlugin("org.scalamacros" % "paradise" % paradiseVersion cross CrossVersion.full)
 
-lazy val lms = ProjectRef(file("/home/reikdas/Research/lms-clean"), "lms-clean")
+val lms_loc = "/home/reikdas/Research/lms-clean"
+lazy val lms = ProjectRef(file(lms_loc), "lms-clean")
+val lms_path = sys.props.getOrElseUpdate("LMS_PATH", lms_loc)
 
 lazy val lmshdfs = (project in file(".")).dependsOn(lms % "compile->compile")

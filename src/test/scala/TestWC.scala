@@ -62,8 +62,9 @@ class TestWC extends FunSuite {
 
   val execname = "src/test/resources/testwc"
   val outcountpath = "src/test/resources/testwc.txt"
-  // FIXME: Don't hardcode paths
-  val includeFlags = "-I /home/reikdas/lmshdfs/src/main/resources/headers/ -I /home/reikdas/Research/lms-clean/src/main/resources/headers/"
+  val lms_path = sys.props.get("LMS_PATH").get
+  val lmshdfs_path = new File(".").getCanonicalPath
+  val includeFlags = "-I %s/src/main/resources/headers/ -I %s/src/main/resources/headers/".format(lmshdfs_path, lms_path)
 
   test("Wordcount 1G: num_blocks = num_procs") {
     val outcodepath = "src/test/resources/testwc.c"
