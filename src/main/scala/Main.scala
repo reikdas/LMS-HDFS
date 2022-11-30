@@ -343,15 +343,14 @@ trait MapReduceOps extends HDFSOps with FileOps with MyMPIOps with CharArrayOps 
         recvcounts.free
         displs.free
       }
+      val it = ht_iterator(z)
       if (printFlag) {
-        val it = ht_iterator(z)
         while (ht_next(it)) {
           printf("%s %d\n", hti_key(it), hti_value(it))
         }
       } else {
-        Adapter.g.reflectWrite("printflag", Unwrap(z))(Adapter.CTRL)
+        Adapter.g.reflectWrite("printflag", Unwrap(it))(Adapter.CTRL)
       }
-
       redbufs.free
       chars_per_reducer.free
       M.free
@@ -394,7 +393,7 @@ object Main {
       @virtualize
       def snippet(dummy: Rep[Int]) = {
         val paths = GetPaths("/1G.txt")
-        val res = HDFSExec(paths, benchFlag = true, printFlag = true)
+        val res = HDFSExec(paths, benchFlag = true, printFlag = false)
         paths.free
       }
 
