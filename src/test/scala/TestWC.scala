@@ -92,7 +92,6 @@ class TestWC extends FunSuite {
     filesToDelete += outcountpath
     cleanup(filesToDelete.toList)
     filesToDelete += outcodepath
-    val includeFlags = "-I /home/reikdas/lmshdfs/src/main/resources/headers/ -I /home/reikdas/Research/lms-clean/src/main/resources/headers/"
     val compile = "mpicc %s %s -o %s".format(outcodepath, includeFlags, execname)
     compile.!!
     val nprocs = 4
@@ -111,7 +110,6 @@ class TestWC extends FunSuite {
     filesToDelete += outcountpath
     cleanup(filesToDelete.toList)
     filesToDelete += outcodepath
-    val includeFlags = "-I /home/reikdas/lmshdfs/src/main/resources/headers/ -I /home/reikdas/Research/lms-clean/src/main/resources/headers/"
     val compile = "mpicc %s %s -o %s".format(outcodepath, includeFlags, execname)
     compile.!!
     val nprocs = 3
