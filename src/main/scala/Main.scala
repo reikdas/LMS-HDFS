@@ -383,7 +383,7 @@ object Main {
     val loadFile = options.getOrElse("loadFile", throw new RuntimeException("No load file")).toString
     val writeFile = options.getOrElse("writeFile", throw new RuntimeException("No write file")).toString
     val benchFlag: Boolean = if (options.exists(_._1 == "bench")) { options("bench").toString.toBoolean } else { false }
-    val printFlag: Boolean = if (options.exists(_._1 == "print")) { options("print").toString.toBoolean } else { true }
+    val printFlag: Boolean = if (options.exists(_._1 == "print")) { options("print").toString.toBoolean } else { false }
 
     val snippet = new DslDriverC[Int, Unit] with MapReduceOps {
       q =>
