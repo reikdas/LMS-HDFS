@@ -119,4 +119,22 @@ class TestWC extends FunSuite {
     assert(isEqual(Paths.get(outcountpath), Paths.get("src/test/resources/wc1G.txt")))
     cleanup(filesToDelete.toList)
   }
+
+  test("Wordcount 1G: num_procs == 1") {
+    val outcodepath = "src/test/resources/testwc.c"
+    snippet.emitMyCode(outcodepath)
+    val filesToDelete = new ListBuffer[String]()
+    filesToDelete += execname
+    filesToDelete += outcountpath
+    cleanup(filesToDelete.toList)
+    filesToDelete += outcodepath
+    val compile = "mpicc %s %s -o %s".format(outcodepath, includeFlags, execname)
+    compile.!!
+    val nprocs = 3
+    "mpirun -np %s %s 0".format(nprocs, execname) #>> new File(outcountpath) !
+    val sortcmd = "sort %s -o %s".format(outcountpath, outcountpath)
+    sortcmd.!!
+    assert(isEqual(Paths.get(outcountpath), Paths.get("src/test/resources/wc1G.txt")))
+    cleanup(filesToDelete.toList)
+  }
 }
