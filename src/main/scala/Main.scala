@@ -32,10 +32,10 @@ trait HashMapOps extends LMSMore {
       case EffectView(x, base) => base
       case _ => arr
     }
-    libFunction2[Int]("ht_get", Unwrap(tab), Unwrap(arr))(Seq(Unwrap(tab), Unwrap(effectkey)), Seq(), Set())
+    libFunction2[Long]("ht_get", Unwrap(tab), Unwrap(arr))(Seq(Unwrap(tab), Unwrap(effectkey)), Seq(), Set())
   }
 
-  def ht_set(tab: Rep[Array[ht]], arr: Rep[LongArray[Char]], value: Rep[Int]) = {
+  def ht_set(tab: Rep[Array[ht]], arr: Rep[LongArray[Char]], value: Rep[Long]) = {
     val effectkey = arr match {
       case EffectView(x, base) => base
       case _ => arr
@@ -49,7 +49,7 @@ trait HashMapOps extends LMSMore {
 
   def ht_next(iter: Rep[hti]) = libFunction[Boolean]("ht_next", Unwrap(iter))(Seq(0), Seq(0), Set(0))
 
-  def hti_value(iter: Rep[hti]) = libFunction[Int]("hti_value", Unwrap(iter))(Seq(0), Seq(), Set(0))
+  def hti_value(iter: Rep[hti]) = libFunction[Long]("hti_value", Unwrap(iter))(Seq(0), Seq(), Set(0))
 
   def hti_key(iter: Rep[hti]) = libFunction[Array[Char]]("hti_key", Unwrap(iter))(Seq(0), Seq(), Set(0))
 }
@@ -332,9 +332,9 @@ trait MapReduceOps extends HDFSOps with FileOps with MyMPIOps with CharArrayOps 
             var value = ht_get(z, tmp.slice(spointer, -1L))
             //printf("%d\n", tmp(0))
             if (value == -1L) {
-              value = 1
+              value = 1L
             } else {
-              value = value + 1
+              value = value + 1L
             }
             ht_set(z, tmp.slice(spointer, -1L), value)
             spointer = spointer + len + 1
@@ -346,7 +346,7 @@ trait MapReduceOps extends HDFSOps with FileOps with MyMPIOps with CharArrayOps 
       val it = ht_iterator(z)
       if (printFlag) {
         while (ht_next(it)) {
-          printf("%s %d\n", hti_key(it), hti_value(it))
+          printf("%s %ld\n", hti_key(it), hti_value(it))
         }
       } else {
         Adapter.g.reflectWrite("printflag", Unwrap(it))(Adapter.CTRL)

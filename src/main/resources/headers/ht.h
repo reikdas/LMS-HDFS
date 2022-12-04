@@ -31,7 +31,7 @@ SOFTWARE.
 // Hash table entry (slot may be filled or empty).
 typedef struct {
   const char *key; // key is NULL if this slot is empty
-  int value;
+  long value;
 } ht_entry;
 
 // Hash table structure: create with ht_create, free with ht_destroy.
@@ -43,7 +43,7 @@ typedef struct {
 
 typedef struct {
   const char *key; // current key
-  int value;       // current value
+  long value;       // current value
 
   // Don't use these fields directly.
   ht *_table;    // reference to hash table being iterated
@@ -95,7 +95,7 @@ static uint64_t hash_key(const char *key) {
   return hash;
 }
 
-int ht_get(ht *table, const char *key) {
+long ht_get(ht *table, const char *key) {
   // AND hash with capacity-1 to ensure it's within entries array.
   uint64_t hash = hash_key(key);
   size_t index = (size_t)(hash & (uint64_t)(table->capacity - 1));
@@ -118,7 +118,7 @@ int ht_get(ht *table, const char *key) {
 
 // Internal function to set an entry (without expanding table).
 static const char *ht_set_entry(ht_entry *entries, size_t capacity,
-                                const char *key, int value, size_t *plength) {
+                                const char *key, long value, size_t *plength) {
   // AND hash with capacity-1 to ensure it's within entries array.
   uint64_t hash = hash_key(key);
   size_t index = (size_t)(hash & (uint64_t)(capacity - 1));
@@ -179,7 +179,7 @@ static bool ht_expand(ht *table) {
   return true;
 }
 
-const char *ht_set(ht *table, const char *key, int value) {
+const char *ht_set(ht *table, const char *key, long value) {
   assert(value != -1);
 
   // If length will exceed half of current capacity, expand it.
@@ -224,6 +224,6 @@ const char * hti_key(hti *it) {
     return it->key;
 }
 
-int hti_value(hti *it) {
+long hti_value(hti *it) {
     return it->value;
 }
