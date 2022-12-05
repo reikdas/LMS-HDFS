@@ -260,8 +260,15 @@ trait MapReduceOps extends HDFSOps with FileOps with MyMPIOps with CharArrayOps 
     mpi_comm_size(mpi_comm_world, world_size)
     mpi_comm_rank(mpi_comm_world, world_rank)
 
-    if (world_rank < world_size) {
-      val buf = NewLongArray[Char](GetBlockLen() + 1, Some(0)) // Buffer to hold characters in file
+    if (world_rank < paths.length) {
+      val blocks_per_proc: Rep[Int] = (paths.length + world_size - 1) / world_size // Upper bound
+
+      val buf = NewLongArray[Char](GetBlockLen() + 1, Some(0)) // Buffer to hold characters in file (only ReadFile)
+
+      // New variables for handling split words
+      val buf2 = NewLongArray[Char](GetBlockLen() + 1, Some(0)) // Buffer to hold characters from second file (only ReadFile)
+      var fpointer2: RepArray[Char] = RepArray(NewLongArray[Char](1L, Some(0)), 1)
+      var block_num2 = 0
 
       val total_len = paths.length * GetBlockLen()
       // Each row r is the data being sent to reducer r
@@ -269,27 +276,74 @@ trait MapReduceOps extends HDFSOps with FileOps with MyMPIOps with CharArrayOps 
       // Storing number of chars to be sent to reducer i
       val chars_per_reducer = NewLongArray[Long](world_size.toLong, Some(0))
 
-      for (i <- 0 until paths.length) {
-        if (i % world_size == world_rank) {
+      var nextIsSplit: Boolean = false
 
+      for (i <- 0 until blocks_per_proc) {
+        val idx = (world_rank * blocks_per_proc) + i
+
+        if (idx < paths.length) { // Since blocks_per_proc is the upper bound
+
+          // Check if first block contains split word from last block of previous process
+          var lastIsSplit = false
+          if (world_rank != 0 && i == 0) {
+            val lastidx = idx - 1
+            val lastblock_num = open(paths(lastidx))
+            val lastsize = filelen(lastblock_num)
+            val lastfpointer = readFile(lastblock_num, buf, lastsize)
+            val lastchar = lastfpointer(lastfpointer.length - 1)
+            if (!isspace(lastchar)) lastIsSplit = true
+          }
+
+          val block_num: Rep[Int] = if (nextIsSplit == true) { block_num2 } else { open(paths(idx)) }
           // Get buffer of chars from file
-          val block_num = open(paths(i))
-          val size = filelen(block_num)
-          val fpointer = mmapFile(block_num, buf, size)
+          val fpointer: RepArray[Char] = if (nextIsSplit == true) { fpointer2 } else { readFile(block_num, buf, filelen(block_num)) }
 
           var start = 0L
+          if (lastIsSplit || nextIsSplit) { // If first word is a split word, skip it
+            while ((start < fpointer.length) && !isspace(fpointer((start)))) start = start + 1L
+          }
           while (start < fpointer.length) {
-            while (start < (fpointer.length) && isspace(fpointer(start))) start = start + 1
+            while (start < (fpointer.length) && isspace(fpointer(start))) start = start + 1L
             if (start < fpointer.length) {
               var end = start + 1L
-              while ((end < fpointer.length) && !isspace(fpointer(end))) end = end + 1
-              val off = if (end == fpointer.length) 1 else 0
-              val len = end - start - off
-              // NOTE: The end in a slice doesn't matter
-              val which_reducer = hashCode(fpointer.slice(start, end), len) % world_size.toLong
+              while ((end < fpointer.length) && !isspace(fpointer(end))) end = end + 1L
+              var offset = 0L
+              nextIsSplit = false
+              if (end.toInt == fpointer.length) {
+                if (!isspace(fpointer(end - 1))) { // Check if last word is split
+                  nextIsSplit = true
+                } else {
+                  offset = 1L
+                }
+              }
+              var word: Rep[LongArray[Char]] = fpointer.slice(start, end) // NOTE: The end in a slice doesn't matter
+              var len = end - start - offset
+              if (nextIsSplit == true) {
+                block_num2 = open(paths(idx + 1))
+                val size2 = filelen(block_num2)
+                fpointer2 = readFile(block_num2, buf2, size2)
+                var newstart = 0L
+                while ((newstart < fpointer2.length) && !isspace(fpointer2(newstart))) newstart = newstart + 1L
+                len = len + newstart
+                word = NewLongArray[Char](len, Some(0))
+                var arrcounter = 0L
+                var j = start
+                while (j < end) {
+                  word(arrcounter) = fpointer(j)
+                  j = j + 1L
+                  arrcounter = arrcounter + 1L
+                }
+                j = 0L
+                while (j < newstart) {
+                  word(arrcounter) = fpointer2(j)
+                  j = j + 1L
+                  arrcounter = arrcounter + 1L
+                }
+              }
+              val which_reducer = hashCode(word, len) % world_size.toLong
               memcpy2(
                 redbufs.slice(which_reducer * total_len + chars_per_reducer(which_reducer), which_reducer * total_len + chars_per_reducer(which_reducer) + len),
-                fpointer.slice(start, end),
+                word,
                 len)
               redbufs(which_reducer * total_len + chars_per_reducer(which_reducer) + len) = '\0'
               chars_per_reducer(which_reducer) = chars_per_reducer(which_reducer) + 1 + len
@@ -330,7 +384,6 @@ trait MapReduceOps extends HDFSOps with FileOps with MyMPIOps with CharArrayOps 
           while (spointer < num_elem_for_red) {
             val len = strlen(tmp.slice(spointer, -1L))
             var value = ht_get(z, tmp.slice(spointer, -1L))
-            //printf("%d\n", tmp(0))
             if (value == -1L) {
               value = 1L
             } else {
@@ -385,7 +438,7 @@ object Main {
     val benchFlag: Boolean = if (options.exists(_._1 == "bench")) { options("bench").toString.toBoolean } else { false }
     val printFlag: Boolean = if (options.exists(_._1 == "print")) { options("print").toString.toBoolean } else { false }
 
-    val snippet = new DslDriverC[Int, Unit] with MapReduceOps {
+    val driver = new DslDriverC[Int, Unit] with MapReduceOps {
       q =>
       override val codegen = new DslGenC with CCodeGenLibFunction with CCodeGenMPI with CCodeGenCMacro with CCodeGenScannerOps {
         override def remap(m: Typ[_]): String =
@@ -418,6 +471,6 @@ object Main {
         codegen.emitSource[Int, Unit](wrapper, "Snippet", new java.io.PrintStream(path))
       }
     }
-    snippet.emitMyCode(writeFile)
+    driver.emitMyCode(writeFile)
   }
 }
