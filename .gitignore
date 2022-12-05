@@ -8,4 +8,5 @@ target/
 hs_err_pid*
 
 # Test
-src/main/resources/testwc*
+**/*/testwc*
+bench*.txt

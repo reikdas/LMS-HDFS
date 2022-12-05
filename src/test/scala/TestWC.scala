@@ -12,7 +12,7 @@ import scala.sys.process._
 // Ensure Hadoop is running in the background
 class TestWC extends FunSuite {
 
-  val snippet = new DslDriverC[Int, Unit] with MapReduceOps {
+  def makeDriver(filepath: String) = new DslDriverC[Int, Unit] with MapReduceOps {
     q =>
     override val codegen = new DslGenC with CCodeGenLibFunction with CCodeGenMPI with CCodeGenCMacro with CCodeGenScannerOps {
       override def remap(m: Typ[_]): String =
@@ -31,7 +31,7 @@ class TestWC extends FunSuite {
 
     @virtualize
     def snippet(dummy: Rep[Int]) = {
-      val paths = GetPaths("/1G.txt")
+      val paths = GetPaths(filepath)
       HDFSExec(paths)
       paths.free
     }
@@ -68,7 +68,7 @@ class TestWC extends FunSuite {
 
   test("Wordcount 1G: num_blocks = num_procs") {
     val outcodepath = "src/test/resources/testwc.c"
-    snippet.emitMyCode(outcodepath)
+    makeDriver("/1G.txt").emitMyCode(outcodepath)
     val filesToDelete = new ListBuffer[String]()
     filesToDelete += execname
     filesToDelete += outcountpath
@@ -86,7 +86,7 @@ class TestWC extends FunSuite {
 
   test("Wordcount 1G: num_blocks/2 = num_procs") {
     val outcodepath = "src/test/resources/testwc.c"
-    snippet.emitMyCode(outcodepath)
+    makeDriver("/1G.txt").emitMyCode(outcodepath)
     val filesToDelete = new ListBuffer[String]()
     filesToDelete += execname
     filesToDelete += outcountpath
@@ -104,7 +104,7 @@ class TestWC extends FunSuite {
 
   test("Wordcount 1G: num_blocks%num_procs != 0") {
     val outcodepath = "src/test/resources/testwc.c"
-    snippet.emitMyCode(outcodepath)
+    makeDriver("/1G.txt").emitMyCode(outcodepath)
     val filesToDelete = new ListBuffer[String]()
     filesToDelete += execname
     filesToDelete += outcountpath
@@ -122,7 +122,7 @@ class TestWC extends FunSuite {
 
   test("Wordcount 1G: num_procs == 1") {
     val outcodepath = "src/test/resources/testwc.c"
-    snippet.emitMyCode(outcodepath)
+    makeDriver("/1G.txt").emitMyCode(outcodepath)
     val filesToDelete = new ListBuffer[String]()
     filesToDelete += execname
     filesToDelete += outcountpath
@@ -136,5 +136,23 @@ class TestWC extends FunSuite {
     sortcmd.!!
     assert(isEqual(Paths.get(outcountpath), Paths.get("src/test/resources/wc1G.txt")))
     cleanup(filesToDelete.toList)
+  }
+
+  test("Word split at boundary") {
+    val outcodepath = "src/test/resources/testwc.c"
+    makeDriver("/text.txt").emitMyCode(outcodepath)
+    val filesToDelete = new ListBuffer[String]()
+    filesToDelete += execname
+    filesToDelete += outcountpath
+    cleanup(filesToDelete.toList)
+    filesToDelete += outcodepath
+    val compile = "mpicc %s %s -o %s".format(outcodepath, includeFlags, execname)
+    compile.!!
+    val nprocs = 4
+    "mpirun -np %s %s 0".format(nprocs, execname) #>> new File(outcountpath) !
+    val sortcmd = "sort %s -o %s".format(outcountpath, outcountpath)
+    sortcmd.!!
+    assert(isEqual(Paths.get(outcountpath), Paths.get("src/test/resources/wctext.txt")))
+    //cleanup(filesToDelete.toList)
   }
 }
