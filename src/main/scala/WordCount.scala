@@ -114,6 +114,16 @@ trait MyMPIOps extends LibFunction with ArrayOps with MPIOps {
       Unwrap(displs), Unwrap(recvtype), Unwrap(root), Unwrap(comm))(Seq(0, 1, 2, 3, 4, 5, 6, 7, 8), Seq(3), Set(), Unwrap(effectkey))
   }
 
+  def mpi_reduce(send_data: Rep[Long], recv_data: Rep[Long], count: Rep[Int], datatype: Rep[MPIDataType], op: Rep[MPIOp],
+                 root: Rep[Int], comm: Rep[MPIComm]) = {
+    val effectkey = recv_data match {
+      case EffectView(x, base) => base
+      case _ => recv_data
+    }
+    libFunction[Unit]("MPI_Reduce", Unwrap(send_data), Unwrap(recv_data), Unwrap(count), Unwrap(datatype), Unwrap(op),
+      Unwrap(root), Unwrap(comm))(Seq(), Seq(1), Set(0, 1), Unwrap(effectkey))
+  }
+
   def mpi_wtime() = unchecked[Double]("MPI_Wtime()")
 }
 
@@ -325,12 +335,10 @@ trait MapReduceOps extends HDFSOps with FileOps with MyMPIOps with CharArrayOps 
         mpi_gatherv(redbufs.slice(j * total_len, -1L), M(world_size * world_rank + j).toInt, mpi_char, tmp, recvcounts, displs, mpi_char, j, mpi_comm_world)
 
         if (world_rank == j) {
-
           var spointer = 0L
           while (spointer < num_elem_for_red) {
             val len = strlen(tmp.slice(spointer, -1L))
             var value = ht_get(z, tmp.slice(spointer, -1L))
-            //printf("%d\n", tmp(0))
             if (value == -1L) {
               value = 1L
             } else {
@@ -365,7 +373,7 @@ trait MapReduceOps extends HDFSOps with FileOps with MyMPIOps with CharArrayOps 
   }
 }
 
-object Main {
+object WordCount {
 
   def main(args: Array[String]): Unit = {
 
