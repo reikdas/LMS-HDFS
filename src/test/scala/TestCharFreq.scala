@@ -10,19 +10,11 @@ import scala.collection.mutable.ListBuffer
 import scala.sys.process._
 
 // Ensure Hadoop is running in the background
-class TestWC extends FunSuite {
+class TestCharFreq extends FunSuite {
 
-  def makeDriver(filepath: String) = new DslDriverC[Int, Unit] with WordCountOps {
+  def makeDriver(filepath: String) = new DslDriverC[Int, Unit] with CharFreqOps {
     q =>
     override val codegen = new DslGenC with CCodeGenLibFunction with CCodeGenMPI with CCodeGenCMacro with CCodeGenScannerOps {
-      override def remap(m: Typ[_]): String =
-        if (m <:< manifest[ht]) {
-          "ht"
-        } else if (m <:< manifest[hti]) {
-          "hti"
-        } else {
-          super.remap(m)
-        }
 
       registerHeader("<ctype.h>")
       registerHeader("src/main/resources/headers", "\"ht.h\"")
@@ -60,14 +52,14 @@ class TestWC extends FunSuite {
     false
   }
 
-  val execname = "src/test/resources/testwc"
-  val outcountpath = "src/test/resources/testwc.txt"
+  val execname = "src/test/resources/testcharfreq"
+  val outcountpath = "src/test/resources/testcharfreq.txt"
   val lms_path = sys.props.get("LMS_PATH").get
   val lmshdfs_path = new File(".").getCanonicalPath
   val includeFlags = "-I %s/src/main/resources/headers/ -I %s/src/main/resources/headers/".format(lmshdfs_path, lms_path)
 
-  test("Wordcount 1G: num_blocks = num_procs") {
-    val outcodepath = "src/test/resources/testwc.c"
+  test("Char Freq 1G: num_blocks = num_procs") {
+    val outcodepath = "src/test/resources/testcharfreq.c"
     makeDriver("/1G.txt").emitMyCode(outcodepath)
     val filesToDelete = new ListBuffer[String]()
     filesToDelete += execname
@@ -78,14 +70,13 @@ class TestWC extends FunSuite {
     compile.!!
     val nprocs = 8
     "mpirun -np %s %s 0".format(nprocs, execname) #>> new File(outcountpath) !
-    val sortcmd = "sort %s -o %s".format(outcountpath, outcountpath)
-    sortcmd.!!
-    assert(isEqual(Paths.get(outcountpath), Paths.get("src/test/resources/wc1G.txt")))
+    val foo = 1 // FIXME: Dummy line required to handle above linesc
+    assert(isEqual(Paths.get(outcountpath), Paths.get("src/test/resources/charfreq1G.txt")))
     cleanup(filesToDelete.toList)
   }
 
-  test("Wordcount 1G: num_blocks/2 = num_procs") {
-    val outcodepath = "src/test/resources/testwc.c"
+  test("Char Freq 1G: num_blocks/2 = num_procs") {
+    val outcodepath = "src/test/resources/testcharfreq.c"
     makeDriver("/1G.txt").emitMyCode(outcodepath)
     val filesToDelete = new ListBuffer[String]()
     filesToDelete += execname
@@ -96,14 +87,13 @@ class TestWC extends FunSuite {
     compile.!!
     val nprocs = 4
     "mpirun -np %s %s 0".format(nprocs, execname) #>> new File(outcountpath) !
-    val sortcmd = "sort %s -o %s".format(outcountpath, outcountpath)
-    sortcmd.!!
-    assert(isEqual(Paths.get(outcountpath), Paths.get("src/test/resources/wc1G.txt")))
+    val foo = 1 // FIXME: Dummy line required to handle above line
+    assert(isEqual(Paths.get(outcountpath), Paths.get("src/test/resources/charfreq1G.txt")))
     cleanup(filesToDelete.toList)
   }
 
-  test("Wordcount 1G: num_blocks%num_procs != 0") {
-    val outcodepath = "src/test/resources/testwc.c"
+  test("Char Freq 1G: num_blocks%num_procs != 0") {
+    val outcodepath = "src/test/resources/testcharfreq.c"
     makeDriver("/1G.txt").emitMyCode(outcodepath)
     val filesToDelete = new ListBuffer[String]()
     filesToDelete += execname
@@ -114,14 +104,13 @@ class TestWC extends FunSuite {
     compile.!!
     val nprocs = 3
     "mpirun -np %s %s 0".format(nprocs, execname) #>> new File(outcountpath) !
-    val sortcmd = "sort %s -o %s".format(outcountpath, outcountpath)
-    sortcmd.!!
-    assert(isEqual(Paths.get(outcountpath), Paths.get("src/test/resources/wc1G.txt")))
+    val foo = 1 // FIXME: Dummy line required to handle above line
+    assert(isEqual(Paths.get(outcountpath), Paths.get("src/test/resources/charfreq1G.txt")))
     cleanup(filesToDelete.toList)
   }
 
   test("Wordcount 1G: num_procs == 1") {
-    val outcodepath = "src/test/resources/testwc.c"
+    val outcodepath = "src/test/resources/testcharfreq.c"
     makeDriver("/1G.txt").emitMyCode(outcodepath)
     val filesToDelete = new ListBuffer[String]()
     filesToDelete += execname
@@ -132,9 +121,8 @@ class TestWC extends FunSuite {
     compile.!!
     val nprocs = 3
     "mpirun -np %s %s 0".format(nprocs, execname) #>> new File(outcountpath) !
-    val sortcmd = "sort %s -o %s".format(outcountpath, outcountpath)
-    sortcmd.!!
-    assert(isEqual(Paths.get(outcountpath), Paths.get("src/test/resources/wc1G.txt")))
+    val foo = 1 // FIXME: Dummy line required to handle above line
+    assert(isEqual(Paths.get(outcountpath), Paths.get("src/test/resources/charfreq1G.txt")))
     cleanup(filesToDelete.toList)
   }
 }

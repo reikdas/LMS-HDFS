@@ -17,7 +17,7 @@ trait WhitespaceOps extends HDFSOps with FileOps with MyMPIOps with CharArrayOps
     mpi_comm_size(mpi_comm_world, world_size)
     mpi_comm_rank(mpi_comm_world, world_rank)
 
-    if (world_rank < world_size) {
+    if (world_rank < paths.length) {
       val buf = NewLongArray[Char](GetBlockLen() + 1, Some(0)) // Buffer to hold characters in file
 
       var count = 0L

@@ -17,6 +17,8 @@ autoCompilerPlugins := true
 
 val paradiseVersion = "2.1.0"
 
+parallelExecution in Test := false
+
 addCompilerPlugin("org.scalamacros" % "paradise" % paradiseVersion cross CrossVersion.full)
 
 val lms_loc = "/home/reikdas/Research/lms-clean"
