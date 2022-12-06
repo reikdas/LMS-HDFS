@@ -5,7 +5,7 @@ import lms.core.virtualize
 import lms.thirdparty.{CCodeGenCMacro, CCodeGenLibFunction, CCodeGenMPI, CCodeGenScannerOps}
 
 @virtualize
-trait WhitespaceOps extends HDFSOps with FileOps with MyMPIOps with CharArrayOps with HashMapOps {
+trait WhitespaceOps extends HDFSOps with FileOps with MyMPIOps with CharArrayOps {
 
   def HDFSExec(paths: Rep[Array[String]], benchFlag: Boolean = false, printFlag: Boolean = true) = {
     // MPI initialize
@@ -37,7 +37,7 @@ trait WhitespaceOps extends HDFSOps with FileOps with MyMPIOps with CharArrayOps
           close(block_num)
         }
       }
-      var total_count = 0L
+      val total_count: Var[Long] = var_new(0L)
       mpi_reduce(count, total_count, 1, mpi_long, mpi_sum, 0, mpi_comm_world)
 
       if (printFlag) {

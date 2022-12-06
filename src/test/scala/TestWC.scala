@@ -12,7 +12,7 @@ import scala.sys.process._
 // Ensure Hadoop is running in the background
 class TestWC extends FunSuite {
 
-  def makeDriver(filepath: String) = new DslDriverC[Int, Unit] with MapReduceOps {
+  def makeDriver(filepath: String) = new DslDriverC[Int, Unit] with WordCountOps {
     q =>
     override val codegen = new DslGenC with CCodeGenLibFunction with CCodeGenMPI with CCodeGenCMacro with CCodeGenScannerOps {
       override def remap(m: Typ[_]): String =
@@ -138,7 +138,7 @@ class TestWC extends FunSuite {
     cleanup(filesToDelete.toList)
   }
 
-  test("Word split at boundary") {
+  test("Wordcount: word split at boundary") {
     val outcodepath = "src/test/resources/testwc.c"
     makeDriver("/text.txt").emitMyCode(outcodepath)
     val filesToDelete = new ListBuffer[String]()

@@ -114,14 +114,9 @@ trait MyMPIOps extends LibFunction with ArrayOps with MPIOps {
       Unwrap(displs), Unwrap(recvtype), Unwrap(root), Unwrap(comm))(Seq(0, 1, 2, 3, 4, 5, 6, 7, 8), Seq(3), Set(), Unwrap(effectkey))
   }
 
-  def mpi_reduce(send_data: Rep[Long], recv_data: Rep[Long], count: Rep[Int], datatype: Rep[MPIDataType], op: Rep[MPIOp],
+  def mpi_reduce(send_data: Rep[Long], recv_data: Var[Long], count: Rep[Int], datatype: Rep[MPIDataType], op: Rep[MPIOp],
                  root: Rep[Int], comm: Rep[MPIComm]) = {
-    val effectkey = recv_data match {
-      case EffectView(x, base) => base
-      case _ => recv_data
-    }
-    libFunction[Unit]("MPI_Reduce", Unwrap(send_data), Unwrap(recv_data), Unwrap(count), Unwrap(datatype), Unwrap(op),
-      Unwrap(root), Unwrap(comm))(Seq(), Seq(1), Set(0, 1), Unwrap(effectkey))
+    unchecked[Unit]("MPI_Reduce(&", send_data, ", &", recv_data, ",", count, ",", datatype, ",", op, ",", root, ",", comm, ")")
   }
 
   def mpi_wtime() = unchecked[Double]("MPI_Wtime()")
@@ -258,7 +253,7 @@ trait HDFSOps extends LMSMore {
 }
 
 @virtualize
-trait MapReduceOps extends HDFSOps with FileOps with MyMPIOps with CharArrayOps with HashMapOps {
+trait WordCountOps extends HDFSOps with FileOps with MyMPIOps with CharArrayOps with HashMapOps {
 
   def HDFSExec(paths: Rep[Array[String]], benchFlag: Boolean = false, printFlag: Boolean = true) = {
     // MPI initialize
@@ -393,7 +388,7 @@ object WordCount {
     val benchFlag: Boolean = if (options.exists(_._1 == "bench")) { options("bench").toString.toBoolean } else { false }
     val printFlag: Boolean = if (options.exists(_._1 == "print")) { options("print").toString.toBoolean } else { false }
 
-    val snippet = new DslDriverC[Int, Unit] with MapReduceOps {
+    val driver = new DslDriverC[Int, Unit] with WordCountOps {
       q =>
       override val codegen = new DslGenC with CCodeGenLibFunction with CCodeGenMPI with CCodeGenCMacro with CCodeGenScannerOps {
         override def remap(m: Typ[_]): String =
@@ -426,6 +421,6 @@ object WordCount {
         codegen.emitSource[Int, Unit](wrapper, "Snippet", new java.io.PrintStream(path))
       }
     }
-    snippet.emitMyCode(writeFile)
+    driver.emitMyCode(writeFile)
   }
 }
