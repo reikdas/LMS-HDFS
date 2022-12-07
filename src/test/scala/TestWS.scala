@@ -108,7 +108,7 @@ class TestWS extends FunSuite {
     cleanup(filesToDelete.toList)
   }
 
-  test("Wordcount 1G: num_procs == 1") {
+  test("Whitespace 1G: num_procs == 1") {
     val outcodepath = "src/test/resources/testws.c"
     makeDriver("/1G.txt").emitMyCode(outcodepath)
     val filesToDelete = new ListBuffer[String]()

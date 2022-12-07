@@ -109,7 +109,7 @@ class TestCharFreq extends FunSuite {
     cleanup(filesToDelete.toList)
   }
 
-  test("Wordcount 1G: num_procs == 1") {
+  test("Char Freq 1G: num_procs == 1") {
     val outcodepath = "src/test/resources/testcharfreq.c"
     makeDriver("/1G.txt").emitMyCode(outcodepath)
     val filesToDelete = new ListBuffer[String]()

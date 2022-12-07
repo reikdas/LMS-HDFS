@@ -17,9 +17,10 @@ if __name__ == "__main__":
     classes = ["WordCount", "CharFreq", "Whitespace"]
     includeFlags = "-I {0}/src/main/resources/headers/ -I {1}/src/main/resources/headers/".format(lmshdfs_path, lms_path)
     for scalaclass in classes:
+        print("Benchmarking {0}".format(scalaclass))
         for key, values in conf.items():
-            with open("bench{0}{1}".format(scalaclass, key[1:]), "w") as f:
-                print("Benchmarking on {0}".format(key))
+            with open("bench{0}{1}.csv".format(scalaclass, key[1:-4]), "w") as f:
+                print("For {0}".format(key))
                 subprocess.run(shlex.split("sbt \"runMain {0} --loadFile={1} --writeFile=bench.c --bench\"".format(scalaclass, key)))
                 subprocess.run(shlex.split("mpicc -O3 bench.c {0} -o bench".format(includeFlags)))
                 for value in values:
