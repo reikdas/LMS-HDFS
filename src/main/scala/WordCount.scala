@@ -25,7 +25,9 @@ trait FileOps extends LMSMore {
 trait HashMapOps extends LMSMore {
   class ht
 
-  def ht_create() = libFunction[Array[ht]]("ht_create")(Seq(), Seq(), Set())
+  def ht_create() = unchecked[Array[ht]]("ht_create()")
+
+  def ht_destroy(tab: Rep[Array[ht]]) = libFunction[Array[ht]]("ht_destroy", Unwrap(tab))(Seq(0), Seq(), Set())
 
   def ht_get(tab: Rep[Array[ht]], arr: Rep[LongArray[Char]]) = {
     val effectkey = arr match {
@@ -42,6 +44,8 @@ trait HashMapOps extends LMSMore {
     }
     libFunction2[Unit]("ht_set", Unwrap(tab), Unwrap(arr), Unwrap(value))(Seq(Unwrap(tab), Unwrap(effectkey)), Seq(Unwrap(tab)), Set())
   }
+
+  class ht_entry
 
   class hti
 
@@ -102,10 +106,16 @@ trait MyMPIOps extends LibFunction with ArrayOps with MPIOps {
 
   def mpi_allgather(sendbuf: Rep[LongArray[Long]], sendcount: Rep[Long], sendtype: Rep[MPIDataType], recvbuf: Rep[LongArray[Long]],
                     recvcount: Rep[Long], recvtype: Rep[MPIDataType], comm: Rep[MPIComm]) =
-    libFunction[Unit]("MPI_Allgather", Unwrap(sendbuf), Unwrap(sendcount), Unwrap(sendtype), Unwrap(recvbuf), Unwrap(recvcount), Unwrap(recvtype), Unwrap(comm))(Seq(0, 1, 2, 3, 4, 5, 6), Seq(3), Set())
+    libFunction[Unit]("MPI_Allgather", Unwrap(sendbuf), Unwrap(sendcount), Unwrap(sendtype), Unwrap(recvbuf), Unwrap(recvcount),
+      Unwrap(recvtype), Unwrap(comm))(Seq(0, 1, 2, 3, 4, 5, 6), Seq(3), Set())
 
-  def mpi_gatherv(sendbuf: Rep[LongArray[Char]], sendcount: Rep[Int], sendtype: Rep[MPIDataType], recvbuf: Rep[LongArray[Char]],
-                  recvcounts: Rep[Array[Int]], displs: Rep[Array[Int]], recvtype: Rep[MPIDataType], root: Rep[Int], comm: Rep[MPIComm]) = {
+  def mpi_allgather2(sendbuf: Rep[Int], sendcount: Rep[Int], sendtype: Rep[MPIDataType], recvbuf: Rep[LongArray[Int]],
+                    recvcount: Rep[Int], recvtype: Rep[MPIDataType], comm: Rep[MPIComm]) =
+    libFunction[Unit]("MPI_Allgather", Unwrap(sendbuf), Unwrap(sendcount), Unwrap(sendtype), Unwrap(recvbuf), Unwrap(recvcount),
+      Unwrap(recvtype), Unwrap(comm))(Seq(0, 1, 2, 3, 4, 5, 6), Seq(3), Set(0))
+
+  def mpi_gatherv[T: Manifest](sendbuf: Rep[LongArray[T]], sendcount: Rep[Int], sendtype: Rep[MPIDataType], recvbuf: Rep[LongArray[T]],
+                  recvcounts: Rep[LongArray[Int]], displs: Rep[Array[Int]], recvtype: Rep[MPIDataType], root: Rep[Int], comm: Rep[MPIComm]) = {
     val effectkey = recvbuf match {
       case EffectView(x, base) => base
       case _ => recvbuf
@@ -271,29 +281,18 @@ trait WordCountOps extends HDFSOps with FileOps with MyMPIOps with CharArrayOps 
     mpi_comm_rank(mpi_comm_world, world_rank)
 
     if (world_rank < paths.length) {
-      val buf = NewLongArray[Char](GetBlockLen() + 1, Some(0)) // Buffer to hold characters in file
-
-      val total_len = GetBlockLen() + 1
-      // Each row r is the data being sent to reducer r
-      val redbufs = NewLongArray[Char](world_size * total_len, Some(0))
-
-
-      val M = NewLongArray[Long](world_size * world_size, Some(0))
-      val recvcounts = NewArray0[Int](world_size)
-      val z = ht_create()
-
-
+      val buf = NewLongArray[Char](GetBlockLen() + 1, Some(0)) // Underlying buffer for readFile
+      val idxmap = ht_create()
+      val word = NewLongArray[Char](GetBlockLen())
+      val allwords = NewLongArray[Char](GetBlockLen()*2, Some(0))
+      var total_len = 0
+      var word_count = 0
+      val allvals = NewLongArray[Int](GetBlockLen() * 20)
       for (i <- 0 until paths.length) {
-        if (i % world_size == world_rank) {
-
-          // Get buffer of chars from file
+        if (i%world_size == world_rank) {
           val block_num = open(paths(i))
           val size = filelen(block_num)
           val fpointer = mmapFile(block_num, buf, size)
-
-          // Storing number of chars to be sent to reducer i
-          val chars_per_reducer = NewLongArray[Long](world_size.toLong, Some(0))
-
           var start = 0L
           while (start < fpointer.length) {
             while (start < (fpointer.length) && isspace(fpointer(start))) start = start + 1
@@ -302,74 +301,88 @@ trait WordCountOps extends HDFSOps with FileOps with MyMPIOps with CharArrayOps 
               while ((end < fpointer.length) && !isspace(fpointer(end))) end = end + 1
               val off = if (end == fpointer.length) 1 else 0
               val len = end - start - off
-              // NOTE: The end in a slice doesn't matter
-              val which_reducer = hashCode(fpointer.slice(start, -1L), len) % world_size.toLong
-              memcpy2(
-                redbufs.slice(which_reducer * total_len + chars_per_reducer(which_reducer), -1L),
-                fpointer.slice(start, -1L),
-                len)
-              redbufs(which_reducer * total_len + chars_per_reducer(which_reducer) + len) = '\0'
-              chars_per_reducer(which_reducer) = chars_per_reducer(which_reducer) + 1 + len
+              memcpy2(word, fpointer.slice(start, -1L), len)
+              word(len) = '\0'
+              val value = ht_get(idxmap, word)
+              if (value == -1L) {
+                ht_set(idxmap, word, word_count.toLong)
+                memcpy2(allwords.slice(total_len.toLong, -1L), word, len)
+                allwords(total_len + len) = '\0'
+                total_len = total_len + len.toInt + 1
+                allvals(word_count.toLong) = 1
+                word_count = word_count + 1
+              } else {
+                allvals(value) = allvals(value) + 1
+              }
               start = end
             }
           }
-          mpi_barrier(mpi_comm_world)
-          mpi_allgather(chars_per_reducer, world_size.toLong, mpi_long, M, world_size.toLong, mpi_long, mpi_comm_world)
-
-          var num_elem_for_red = 0L
-          for (j <- 0L until world_size.toLong) {
-            num_elem_for_red = num_elem_for_red + M(world_size * j + world_rank)
-          }
-
-          val recv_buf = NewLongArray[Char](num_elem_for_red, Some(0))
-
-          for (j <- 0 until world_size) {
-            val tmp: Rep[LongArray[Char]] = if (world_rank == j) recv_buf else `null`[LongArray[Char]]
-
-            for (k <- 0 until world_size) {
-              recvcounts(k) = M(world_size * k + j).toInt
-            }
-
-            val displs = NewArray0[Int](world_size)
-            displs(0) = 0
-            for (k <- 1 until world_size) {
-              displs(k) = displs(k - 1) + recvcounts(k - 1)
-            }
-            mpi_barrier(mpi_comm_world)
-            mpi_gatherv(redbufs.slice(j * total_len, -1L), M(world_size * world_rank + j).toInt, mpi_char, tmp, recvcounts, displs, mpi_char, j, mpi_comm_world)
-
-            if (world_rank == j) {
-              var spointer = 0L
-              while (spointer < num_elem_for_red) {
-                val len = strlen(tmp.slice(spointer, -1L))
-                var value = ht_get(z, tmp.slice(spointer, -1L))
-                if (value == -1L) {
-                  value = 1L
-                } else {
-                  value = value + 1L
-                }
-                ht_set(z, tmp.slice(spointer, -1L), value)
-                spointer = spointer + len + 1
-              }
-            }
-            displs.free
-          }
-          recv_buf.free
-          chars_per_reducer.free
           close(block_num)
         }
       }
-      recvcounts.free
-      val it = ht_iterator(z)
-      if (printFlag) {
-        while (ht_next(it)) {
-          printf("%s %ld\n", hti_key(it), hti_value(it))
-        }
-      } else {
-        Adapter.g.reflectWrite("printflag", Unwrap(it))(Adapter.CTRL)
+      val recv_data = NewLongArray[Int](world_size.toLong, Some(0))
+      mpi_allgather2(total_len, 1, mpi_int, recv_data, 1, mpi_int, mpi_comm_world)
+      val num_words = NewLongArray[Int](world_size.toLong, Some(0))
+      mpi_allgather2(word_count, 1, mpi_int, num_words, 1, mpi_int, mpi_comm_world)
+      val displs = NewArray0[Int](world_size)
+      displs(0) = 0
+      for (i <- 1 until world_size) {
+        displs(i) = displs(i - 1) + recv_data(i - 1)
       }
-
-      M.free
+      val displs2 = NewArray0[Int](world_size)
+      displs2(0) = 0
+      for (i <- 1 until world_size) {
+        displs2(i) = displs2(i - 1) + num_words(i - 1)
+      }
+      var fullarr_len = 0L
+      var fullvalarr_len = 0L
+      if (world_rank == 0) {
+        for (i <- 0 until world_size) {
+          fullarr_len = fullarr_len + recv_data(i)
+          fullvalarr_len = fullvalarr_len + num_words(i)
+        }
+      }
+      val fullarr: Rep[LongArray[Char]] = if (world_rank == 0) NewLongArray[Char](fullarr_len) else `null`[LongArray[Char]]
+      val fullvalarr: Rep[LongArray[Int]] = if (world_rank == 0) NewLongArray[Int](fullvalarr_len) else `null`[LongArray[Int]]
+      mpi_gatherv(allwords, total_len, mpi_char, fullarr, recv_data, displs, mpi_char, 0, mpi_comm_world)
+      mpi_gatherv(allvals, word_count, mpi_int, fullvalarr, num_words, displs2, mpi_int, 0, mpi_comm_world)
+      ht_destroy(idxmap)
+      if (world_rank == 0) {
+        val hmap = ht_create()
+        var counter = 0L
+        var word_idx: Var[Long] = 0L
+        while (word_idx < fullvalarr_len) {
+          val len = strlen(fullarr.slice(counter, -1L))
+          val value = ht_get(hmap, fullarr.slice(counter, -1L))
+          if (value == -1L) {
+//            printf("%s first=%d\n", fullarr.slice(counter, -1L), value)
+            ht_set(hmap, fullarr.slice(counter, -1L), fullvalarr(word_idx).toLong)
+          } else {
+//            printf("%s old=%d new=%d\n", fullarr.slice(counter, -1L), value, fullvalarr(word_idx))
+            ht_set(hmap, fullarr.slice(counter, -1L), value + fullvalarr(word_idx).toLong)
+          }
+          word_idx = word_idx + 1L
+          counter = counter + len + 1L
+        }
+        val it = ht_iterator(hmap)
+        if (printFlag) {
+          while (ht_next(it)) {
+            printf("%s %ld\n", hti_key(it), hti_value(it))
+          }
+        } else {
+          Adapter.g.reflectWrite("printflag", Unwrap(it))(Adapter.CTRL)
+        }
+        ht_destroy(hmap)
+      }
+      fullarr.free
+      fullvalarr.free
+      displs.free
+      displs2.free
+      num_words.free
+      recv_data.free
+      allvals.free
+      allwords.free
+      word.free
       buf.free
     }
     mpi_finalize()
