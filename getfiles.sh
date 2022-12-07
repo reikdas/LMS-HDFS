@@ -1,5 +1,5 @@
 #!/bin/bash
-curl -sf 'http://ndr.md/data/dummy/1G.txt' > 1G.txt
+# Get 1G.txt from /scratch1/das160 (bigdata2)
 touch 10G.txt
 for (( i = 0; i < 10; i++ )); do
     cat 1G.txt >> 10G.txt

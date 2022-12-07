@@ -284,10 +284,12 @@ trait WordCountOps extends HDFSOps with FileOps with MyMPIOps with CharArrayOps 
       val buf = NewLongArray[Char](GetBlockLen() + 1, Some(0)) // Underlying buffer for readFile
       val idxmap = ht_create()
       val word = NewLongArray[Char](GetBlockLen())
-      val allwords = NewLongArray[Char](GetBlockLen()*2, Some(0))
       var total_len = 0
       var word_count = 0
-      val allvals = NewLongArray[Int](GetBlockLen() * 20)
+      val blocks_per_proc = (paths.length + world_size - 1) / world_size // Ceil of paths.length/world_size
+      val allwords = NewLongArray[Char](GetBlockLen()*blocks_per_proc, Some(0))
+      // There can be atmost (block_len/2) + 1 words in a block
+      val allvals = NewLongArray[Int](GetBlockLen() * blocks_per_proc/2)
       for (i <- 0 until paths.length) {
         if (i%world_size == world_rank) {
           val block_num = open(paths(i))

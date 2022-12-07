@@ -69,7 +69,7 @@ class TestCharFreq extends FunSuite {
     val compile = "mpicc %s %s -o %s".format(outcodepath, includeFlags, execname)
     compile.!!
     val nprocs = 8
-    "mpirun -np %s %s 0".format(nprocs, execname) #>> new File(outcountpath) !
+    "mpirun -np %s --mca btl ^openib %s 0".format(nprocs, execname) #>> new File(outcountpath) !
     val foo = 1 // FIXME: Dummy line required to handle above linesc
     assert(isEqual(Paths.get(outcountpath), Paths.get("src/test/resources/charfreq1G.txt")))
     cleanup(filesToDelete.toList)
@@ -86,7 +86,7 @@ class TestCharFreq extends FunSuite {
     val compile = "mpicc %s %s -o %s".format(outcodepath, includeFlags, execname)
     compile.!!
     val nprocs = 4
-    "mpirun -np %s %s 0".format(nprocs, execname) #>> new File(outcountpath) !
+    "mpirun -np %s --mca btl ^openib %s 0".format(nprocs, execname) #>> new File(outcountpath) !
     val foo = 1 // FIXME: Dummy line required to handle above line
     assert(isEqual(Paths.get(outcountpath), Paths.get("src/test/resources/charfreq1G.txt")))
     cleanup(filesToDelete.toList)
@@ -103,7 +103,7 @@ class TestCharFreq extends FunSuite {
     val compile = "mpicc %s %s -o %s".format(outcodepath, includeFlags, execname)
     compile.!!
     val nprocs = 3
-    "mpirun -np %s %s 0".format(nprocs, execname) #>> new File(outcountpath) !
+    "mpirun -np %s --mca btl ^openib %s 0".format(nprocs, execname) #>> new File(outcountpath) !
     val foo = 1 // FIXME: Dummy line required to handle above line
     assert(isEqual(Paths.get(outcountpath), Paths.get("src/test/resources/charfreq1G.txt")))
     cleanup(filesToDelete.toList)
@@ -120,7 +120,7 @@ class TestCharFreq extends FunSuite {
     val compile = "mpicc %s %s -o %s".format(outcodepath, includeFlags, execname)
     compile.!!
     val nprocs = 3
-    "mpirun -np %s %s 0".format(nprocs, execname) #>> new File(outcountpath) !
+    "mpirun -np %s --mca btl ^openib %s 0".format(nprocs, execname) #>> new File(outcountpath) !
     val foo = 1 // FIXME: Dummy line required to handle above line
     assert(isEqual(Paths.get(outcountpath), Paths.get("src/test/resources/charfreq1G.txt")))
     cleanup(filesToDelete.toList)

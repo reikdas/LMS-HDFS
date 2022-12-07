@@ -77,7 +77,7 @@ class TestWC extends FunSuite {
     val compile = "mpicc %s %s -o %s".format(outcodepath, includeFlags, execname)
     compile.!!
     val nprocs = 8
-    "mpirun -np %s %s 0".format(nprocs, execname) #>> new File(outcountpath) !
+    "mpirun -np %s --mca btl ^openib %s 0".format(nprocs, execname) #>> new File(outcountpath) !
     val sortcmd = "sort %s -o %s".format(outcountpath, outcountpath)
     sortcmd.!!
     assert(isEqual(Paths.get(outcountpath), Paths.get("src/test/resources/wc1G.txt")))
@@ -95,7 +95,7 @@ class TestWC extends FunSuite {
     val compile = "mpicc %s %s -o %s".format(outcodepath, includeFlags, execname)
     compile.!!
     val nprocs = 4
-    "mpirun -np %s %s 0".format(nprocs, execname) #>> new File(outcountpath) !
+    "mpirun -np %s --mca btl ^openib %s 0".format(nprocs, execname) #>> new File(outcountpath) !
     val sortcmd = "sort %s -o %s".format(outcountpath, outcountpath)
     sortcmd.!!
     assert(isEqual(Paths.get(outcountpath), Paths.get("src/test/resources/wc1G.txt")))
@@ -113,7 +113,7 @@ class TestWC extends FunSuite {
     val compile = "mpicc %s %s -o %s".format(outcodepath, includeFlags, execname)
     compile.!!
     val nprocs = 3
-    "mpirun -np %s %s 0".format(nprocs, execname) #>> new File(outcountpath) !
+    "mpirun -np %s --mca btl ^openib %s 0".format(nprocs, execname) #>> new File(outcountpath) !
     val sortcmd = "sort %s -o %s".format(outcountpath, outcountpath)
     sortcmd.!!
     assert(isEqual(Paths.get(outcountpath), Paths.get("src/test/resources/wc1G.txt")))
@@ -131,7 +131,7 @@ class TestWC extends FunSuite {
     val compile = "mpicc %s %s -o %s".format(outcodepath, includeFlags, execname)
     compile.!!
     val nprocs = 3
-    "mpirun -np %s %s 0".format(nprocs, execname) #>> new File(outcountpath) !
+    "mpirun -np %s --mca btl ^openib %s 0".format(nprocs, execname) #>> new File(outcountpath) !
     val sortcmd = "sort %s -o %s".format(outcountpath, outcountpath)
     sortcmd.!!
     assert(isEqual(Paths.get(outcountpath), Paths.get("src/test/resources/wc1G.txt")))

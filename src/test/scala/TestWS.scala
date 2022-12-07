@@ -68,7 +68,7 @@ class TestWS extends FunSuite {
     val compile = "mpicc %s %s -o %s".format(outcodepath, includeFlags, execname)
     compile.!!
     val nprocs = 8
-    val execcomm = "mpirun -np %s %s 0".format(nprocs, execname)
+    val execcomm = "mpirun -np %s --mca btl ^openib %s 0".format(nprocs, execname)
     val count: String = execcomm.!!
     assert(count.trim().equals("161390000"))
     cleanup(filesToDelete.toList)
@@ -85,7 +85,7 @@ class TestWS extends FunSuite {
     val compile = "mpicc %s %s -o %s".format(outcodepath, includeFlags, execname)
     compile.!!
     val nprocs = 4
-    val execcomm = "mpirun -np %s %s 0".format(nprocs, execname)
+    val execcomm = "mpirun -np %s --mca btl ^openib %s 0".format(nprocs, execname)
     val count = execcomm.!!
     assert(count.trim().equals("161390000"))
     cleanup(filesToDelete.toList)
@@ -102,7 +102,7 @@ class TestWS extends FunSuite {
     val compile = "mpicc %s %s -o %s".format(outcodepath, includeFlags, execname)
     compile.!!
     val nprocs = 3
-    val execcomm = "mpirun -np %s %s 0".format(nprocs, execname)
+    val execcomm = "mpirun -np %s --mca btl ^openib %s 0".format(nprocs, execname)
     val count = execcomm.!!
     assert(count.trim().equals("161390000"))
     cleanup(filesToDelete.toList)
@@ -119,7 +119,7 @@ class TestWS extends FunSuite {
     val compile = "mpicc %s %s -o %s".format(outcodepath, includeFlags, execname)
     compile.!!
     val nprocs = 3
-    val execcomm = "mpirun -np %s %s 0".format(nprocs, execname)
+    val execcomm = "mpirun -np %s --mca btl ^openib %s 0".format(nprocs, execname)
     val count = execcomm.!!
     assert(count.trim().equals("161390000"))
     cleanup(filesToDelete.toList)
