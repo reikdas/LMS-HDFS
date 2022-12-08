@@ -23,7 +23,7 @@ class TestWS extends FunSuite {
     @virtualize
     def snippet(dummy: Rep[Int]) = {
       val paths = GetPaths(filepath)
-      HDFSExec(paths)
+      HDFSExec(paths, mmapFile)
       paths.free
     }
 

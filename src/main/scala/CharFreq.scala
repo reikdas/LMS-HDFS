@@ -6,7 +6,7 @@ import lms.thirdparty.{CCodeGenCMacro, CCodeGenLibFunction, CCodeGenMPI, CCodeGe
 @virtualize
 trait CharFreqOps extends HDFSOps with FileOps with MyMPIOps with CharArrayOps {
 
-  def HDFSExec(paths: Rep[Array[String]], benchFlag: Boolean = false, printFlag: Boolean = true) = {
+  def HDFSExec(paths: Rep[Array[String]], readFunc: (Rep[Int], Rep[LongArray[Char]], Rep[Long]) => RepArray[Char], benchFlag: Boolean = false, printFlag: Boolean = true) = {
     // MPI initialize
     var world_size = 0
     var rank = 0
@@ -60,53 +60,58 @@ trait CharFreqOps extends HDFSOps with FileOps with MyMPIOps with CharArrayOps {
   }
 }
 
-  object CharFreq {
+object CharFreq extends CharFreqOps {
 
-    def main(args: Array[String]): Unit = {
-
-      implicit class RegexOps(sc: StringContext) {
-        def r = new util.matching.Regex(sc.parts.mkString, sc.parts.tail.map(_ => "x"): _*)
-      }
-
-      val options: Map[String, Any] = args.toList.foldLeft(Map[String, Any]()) {
-        case (options, r"--loadFile=(\/\w+.txt)$e") => options + ("loadFile" -> e)
-        case (options, r"--writeFile=(\w+.c)$e") => options + ("writeFile" -> e)
-        case (options, "--bench") => options + ("bench" -> true)
-        case (options, "--print") => options + ("print" -> true)
-      }
-
-      val loadFile = options.getOrElse("loadFile", throw new RuntimeException("No load file")).toString
-      val writeFile = options.getOrElse("writeFile", throw new RuntimeException("No write file")).toString
-      val benchFlag: Boolean = if (options.exists(_._1 == "bench")) {
-        options("bench").toString.toBoolean
-      } else {
-        false
-      }
-      val printFlag: Boolean = if (options.exists(_._1 == "print")) {
-        options("print").toString.toBoolean
-      } else {
-        false
-      }
-
-      val driver = new DslDriverC[Int, Unit] with CharFreqOps {
-        q =>
-        override val codegen = new DslGenC with CCodeGenLibFunction with CCodeGenMPI with CCodeGenCMacro with CCodeGenScannerOps {
-          registerHeader("<ctype.h>")
-          registerHeader("src/main/resources/headers", "\"ht.h\"")
-          val IR: q.type = q
-        }
-
-        @virtualize
-        def snippet(dummy: Rep[Int]) = {
-          val paths = GetPaths(loadFile)
-          val res = HDFSExec(paths, benchFlag, printFlag)
-          paths.free
-        }
-
-        def emitMyCode(path: String) = {
-          codegen.emitSource[Int, Unit](wrapper, "Snippet", new java.io.PrintStream(path))
-        }
-      }
-      driver.emitMyCode(writeFile)
+  def main(args: Array[String]): Unit = {
+    implicit class RegexOps(sc: StringContext) {
+      def r = new util.matching.Regex(sc.parts.mkString, sc.parts.tail.map(_ => "x"): _*)
     }
+
+    val options: Map[String, Any] = args.toList.foldLeft(Map[String, Any]()) {
+      case (options, r"--loadFile=(\/\w+.txt)$e") => options + ("loadFile" -> e)
+      case (options, r"--writeFile=(\w+.c)$e") => options + ("writeFile" -> e)
+      case (options, "--bench") => options + ("bench" -> true)
+      case (options, "--print") => options + ("print" -> true)
+      case (options, "--mmap") => options + ("mmap" -> true)
+    }
+
+    val loadFile = options.getOrElse("loadFile", throw new RuntimeException("No load file")).toString
+    val writeFile = options.getOrElse("writeFile", throw new RuntimeException("No write file")).toString
+    val benchFlag: Boolean = if (options.exists(_._1 == "bench")) {
+      options("bench").toString.toBoolean
+    } else {
+      false
+    }
+    val printFlag: Boolean = if (options.exists(_._1 == "print")) {
+      options("print").toString.toBoolean
+    } else {
+      false
+    }
+    val readFunc: (Rep[Int], Rep[LongArray[Char]], Rep[Long]) => RepArray[Char] = if (options.exists(_._1 == "mmap")) {
+      mmapFile
+    } else {
+      readFile
+    }
+
+    val driver = new DslDriverC[Int, Unit] {
+      q =>
+      override val codegen = new DslGenC with CCodeGenLibFunction with CCodeGenMPI with CCodeGenCMacro with CCodeGenScannerOps {
+        registerHeader("<ctype.h>")
+        registerHeader("src/main/resources/headers", "\"ht.h\"")
+        val IR: q.type = q
+      }
+
+      @virtualize
+      def snippet(dummy: Rep[Int]) = {
+        val paths = GetPaths(loadFile)
+        val res = HDFSExec(paths, readFunc, benchFlag, printFlag)
+        paths.free
+      }
+
+      def emitMyCode(path: String) = {
+        codegen.emitSource[Int, Unit](wrapper, "Snippet", new java.io.PrintStream(path))
+      }
+    }
+    driver.emitMyCode(writeFile)
   }
+}

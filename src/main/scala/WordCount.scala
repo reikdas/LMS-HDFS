@@ -270,7 +270,7 @@ trait HDFSOps extends LMSMore {
 @virtualize
 trait WordCountOps extends HDFSOps with FileOps with MyMPIOps with CharArrayOps with HashMapOps {
 
-  def HDFSExec(paths: Rep[Array[String]], benchFlag: Boolean = false, printFlag: Boolean = true) = {
+  def HDFSExec(paths: Rep[Array[String]], readFunc: (Rep[Int], Rep[LongArray[Char]], Rep[Long]) => RepArray[Char], benchFlag: Boolean = false, printFlag: Boolean = true) = {
     // MPI initialize
     var world_size = 0
     var world_rank = 0
@@ -305,7 +305,7 @@ trait WordCountOps extends HDFSOps with FileOps with MyMPIOps with CharArrayOps 
             val lastidx = idx - 1
             val lastblock_num = open(paths(lastidx))
             val lastsize = filelen(lastblock_num)
-            val lastfpointer = mmapFile(lastblock_num, buf, lastsize)
+            val lastfpointer = readFunc(lastblock_num, buf, lastsize)
             Adapter.g.reflectWrite("printflag", Unwrap(lastfpointer(0L)))(Adapter.CTRL)
             val lastchar = lastfpointer(lastfpointer.length - 1)
             if (!isspace(lastchar)) lastIsSplit = true
@@ -315,7 +315,7 @@ trait WordCountOps extends HDFSOps with FileOps with MyMPIOps with CharArrayOps 
           } else {
             open(paths(idx))
           }
-          val fpointer: RepArray[Char] = mmapFile(block_num, buf, filelen(block_num)) // Do I need to open file if already open?
+          val fpointer: RepArray[Char] = readFunc(block_num, buf, filelen(block_num)) // Do I need to open file if already open?
           var start: Var[Long] = 0L
           if (lastIsSplit == true || nextIsSplit == true) { // If first word is a split word, skip it
             while ((start < fpointer.length) && !isspace(fpointer((start)))) start = start + 1L
@@ -337,7 +337,7 @@ trait WordCountOps extends HDFSOps with FileOps with MyMPIOps with CharArrayOps 
               var len: Var[Long] = end - start - off
               if (nextIsSplit == true) {
                 block_num2 = open(paths(idx + 1))
-                val fpointer2 = mmapFile(block_num2, buf2, filelen(block_num2))
+                val fpointer2 = readFunc(block_num2, buf2, filelen(block_num2))
                 var newstart: Var[Long] = 0L
                 while ((newstart < fpointer2.length) && !isspace(fpointer2(newstart))) newstart = newstart + 1L
                 len = len + newstart
@@ -447,7 +447,7 @@ trait WordCountOps extends HDFSOps with FileOps with MyMPIOps with CharArrayOps 
   }
 }
 
-object WordCount {
+object WordCount extends WordCountOps {
 
   def main(args: Array[String]): Unit = {
 
@@ -460,14 +460,16 @@ object WordCount {
       case (options, r"--writeFile=(\w+.c)$e") => options + ("writeFile" -> e)
       case (options, "--bench") => options + ("bench" -> true)
       case (options, "--print") => options + ("print" -> true)
+      case (options, "--mmap") => options + ("mmap" -> true)
     }
 
     val loadFile = options.getOrElse("loadFile", throw new RuntimeException("No load file")).toString
     val writeFile = options.getOrElse("writeFile", throw new RuntimeException("No write file")).toString
     val benchFlag: Boolean = if (options.exists(_._1 == "bench")) { options("bench").toString.toBoolean } else { false }
     val printFlag: Boolean = if (options.exists(_._1 == "print")) { options("print").toString.toBoolean } else { false }
+    val readFunc: (Rep[Int], Rep[LongArray[Char]], Rep[Long]) => RepArray[Char] = if (options.exists(_._1 == "mmap")) { mmapFile } else { readFile }
 
-    val driver = new DslDriverC[Int, Unit] with WordCountOps {
+    val driver = new DslDriverC[Int, Unit] {
       q =>
       override val codegen = new DslGenC with CCodeGenLibFunction with CCodeGenMPI with CCodeGenCMacro with CCodeGenScannerOps {
         override def remap(m: Typ[_]): String =
@@ -492,7 +494,7 @@ object WordCount {
       @virtualize
       def snippet(dummy: Rep[Int]) = {
         val paths = GetPaths(loadFile)
-        val res = HDFSExec(paths, benchFlag, printFlag)
+        val res = HDFSExec(paths, readFunc, benchFlag, printFlag)
         paths.free
       }
 

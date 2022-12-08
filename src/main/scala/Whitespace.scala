@@ -7,7 +7,7 @@ import lms.thirdparty.{CCodeGenCMacro, CCodeGenLibFunction, CCodeGenMPI, CCodeGe
 @virtualize
 trait WhitespaceOps extends HDFSOps with FileOps with MyMPIOps with CharArrayOps {
 
-  def HDFSExec(paths: Rep[Array[String]], benchFlag: Boolean = false, printFlag: Boolean = true) = {
+  def HDFSExec(paths: Rep[Array[String]], readFunc: (Rep[Int], Rep[LongArray[Char]], Rep[Long]) => RepArray[Char], benchFlag: Boolean = false, printFlag: Boolean = true) = {
     // MPI initialize
     var world_size = 0
     var world_rank = 0
@@ -58,7 +58,7 @@ trait WhitespaceOps extends HDFSOps with FileOps with MyMPIOps with CharArrayOps
   }
 }
 
-object Whitespace {
+object Whitespace extends WhitespaceOps {
 
   def main(args: Array[String]): Unit = {
 
@@ -71,14 +71,20 @@ object Whitespace {
       case (options, r"--writeFile=(\w+.c)$e") => options + ("writeFile" -> e)
       case (options, "--bench") => options + ("bench" -> true)
       case (options, "--print") => options + ("print" -> true)
+      case (options, "--mmap") => options + ("mmap" -> true)
     }
 
     val loadFile = options.getOrElse("loadFile", throw new RuntimeException("No load file")).toString
     val writeFile = options.getOrElse("writeFile", throw new RuntimeException("No write file")).toString
     val benchFlag: Boolean = if (options.exists(_._1 == "bench")) { options("bench").toString.toBoolean } else { false }
     val printFlag: Boolean = if (options.exists(_._1 == "print")) { options("print").toString.toBoolean } else { false }
+    val readFunc: (Rep[Int], Rep[LongArray[Char]], Rep[Long]) => RepArray[Char] = if (options.exists(_._1 == "mmap")) {
+      mmapFile
+    } else {
+      readFile
+    }
 
-    val driver = new DslDriverC[Int, Unit] with WhitespaceOps {
+    val driver = new DslDriverC[Int, Unit] {
       q =>
       override val codegen = new DslGenC with CCodeGenLibFunction with CCodeGenMPI with CCodeGenCMacro with CCodeGenScannerOps {
 
@@ -95,7 +101,7 @@ object Whitespace {
       @virtualize
       def snippet(dummy: Rep[Int]) = {
         val paths = GetPaths(loadFile)
-        val res = HDFSExec(paths, benchFlag, printFlag)
+        val res = HDFSExec(paths, readFunc, benchFlag, printFlag)
         paths.free
       }
 
