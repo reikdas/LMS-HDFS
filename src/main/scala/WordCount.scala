@@ -287,23 +287,76 @@ trait WordCountOps extends HDFSOps with FileOps with MyMPIOps with CharArrayOps 
       var total_len = 0
       var word_count = 0
       val blocks_per_proc = (paths.length + world_size - 1) / world_size // Ceil of paths.length/world_size
-      val allwords = NewLongArray[Char](GetBlockLen()*blocks_per_proc, Some(0))
+      val allwords = NewLongArray[Char](GetBlockLen() * blocks_per_proc, Some(0))
       // There can be atmost (block_len/2) + 1 words in a block
-      val allvals = NewLongArray[Int](GetBlockLen() * blocks_per_proc/2)
-      for (i <- 0 until paths.length) {
-        if (i%world_size == world_rank) {
-          val block_num = open(paths(i))
-          val size = filelen(block_num)
-          val fpointer = mmapFile(block_num, buf, size)
-          var start = 0L
+      val allvals = NewLongArray[Int](GetBlockLen() * blocks_per_proc / 2)
+
+      // New variables for handling split words
+      val buf2 = NewLongArray[Char](GetBlockLen() + 1, Some(0)) // Buffer to hold characters from second file (only ReadFile)
+      var block_num2: Var[Int] = 0
+
+      var nextIsSplit: Var[Boolean] = false
+      for (i <- 0 until blocks_per_proc) {
+        val idx = (world_rank * blocks_per_proc) + i
+        if (idx < paths.length) { // Since blocks_per_proc is the upper bound
+          // Check if first block contains split word from last block of previous process
+          var lastIsSplit: Var[Boolean] = false
+          if (world_rank != 0 && i == 0) {
+            val lastidx = idx - 1
+            val lastblock_num = open(paths(lastidx))
+            val lastsize = filelen(lastblock_num)
+            val lastfpointer = mmapFile(lastblock_num, buf, lastsize)
+            Adapter.g.reflectWrite("printflag", Unwrap(lastfpointer(0L)))(Adapter.CTRL)
+            val lastchar = lastfpointer(lastfpointer.length - 1)
+            if (!isspace(lastchar)) lastIsSplit = true
+          }
+          val block_num: Rep[Int] = if (nextIsSplit == true) {
+            block_num2
+          } else {
+            open(paths(idx))
+          }
+          val fpointer: RepArray[Char] = mmapFile(block_num, buf, filelen(block_num)) // Do I need to open file if already open?
+          var start: Var[Long] = 0L
+          if (lastIsSplit == true || nextIsSplit == true) { // If first word is a split word, skip it
+            while ((start < fpointer.length) && !isspace(fpointer((start)))) start = start + 1L
+          }
           while (start < fpointer.length) {
-            while (start < (fpointer.length) && isspace(fpointer(start))) start = start + 1
+            while (start < (fpointer.length) && isspace(fpointer(start))) start = start + 1L
             if (start < fpointer.length) {
-              var end = start + 1L
-              while ((end < fpointer.length) && !isspace(fpointer(end))) end = end + 1
-              val off = if (end == fpointer.length) 1 else 0
-              val len = end - start - off
-              memcpy2(word, fpointer.slice(start, -1L), len)
+              var end: Var[Long] = start + 1L
+              while ((end < fpointer.length) && !isspace(fpointer(end))) end = end + 1L
+              var off: Var[Long] = 0L
+              nextIsSplit = false
+              if (end.toInt == fpointer.length) {
+                if (!isspace(fpointer(end - 1)) && (idx < paths.length - 1)) { // Check if last word is split
+                  nextIsSplit = true
+                } else {
+                  off = 1L
+                }
+              }
+              var len: Var[Long] = end - start - off
+              if (nextIsSplit == true) {
+                block_num2 = open(paths(idx + 1))
+                val fpointer2 = mmapFile(block_num2, buf2, filelen(block_num2))
+                var newstart: Var[Long] = 0L
+                while ((newstart < fpointer2.length) && !isspace(fpointer2(newstart))) newstart = newstart + 1L
+                len = len + newstart
+                var arrcounter = 0L
+                var j: Var[Long] = start
+                while (j < end) {
+                  word(arrcounter) = fpointer(j)
+                  j = j + 1L
+                  arrcounter = arrcounter + 1L
+                }
+                j = 0L
+                while (j < newstart) {
+                  word(arrcounter) = fpointer2(j)
+                  j = j + 1L
+                  arrcounter = arrcounter + 1L
+                }
+              } else {
+                memcpy2(word, fpointer.slice(start, -1L), len)
+              }
               word(len) = '\0'
               val value = ht_get(idxmap, word)
               if (value == -1L) {
@@ -357,10 +410,8 @@ trait WordCountOps extends HDFSOps with FileOps with MyMPIOps with CharArrayOps 
           val len = strlen(fullarr.slice(counter, -1L))
           val value = ht_get(hmap, fullarr.slice(counter, -1L))
           if (value == -1L) {
-//            printf("%s first=%d\n", fullarr.slice(counter, -1L), value)
             ht_set(hmap, fullarr.slice(counter, -1L), fullvalarr(word_idx).toLong)
           } else {
-//            printf("%s old=%d new=%d\n", fullarr.slice(counter, -1L), value, fullvalarr(word_idx))
             ht_set(hmap, fullarr.slice(counter, -1L), value + fullvalarr(word_idx).toLong)
           }
           word_idx = word_idx + 1L
@@ -386,6 +437,7 @@ trait WordCountOps extends HDFSOps with FileOps with MyMPIOps with CharArrayOps 
       allwords.free
       word.free
       buf.free
+      buf2.free
     }
     mpi_finalize()
     if (benchFlag) {

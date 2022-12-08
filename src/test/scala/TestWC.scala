@@ -1,3 +1,4 @@
+import lms.core.Backend.Node
 import lms.core.stub._
 import lms.core.virtualize
 import lms.thirdparty.{CCodeGenCMacro, CCodeGenLibFunction, CCodeGenMPI, CCodeGenScannerOps}
@@ -23,6 +24,11 @@ class TestWC extends FunSuite {
         } else {
           super.remap(m)
         }
+
+      override def traverse(n: Node): Unit = n match {
+        case n@Node(_, "printflag", _, _) =>
+        case _ => super.traverse(n)
+      }
 
       registerHeader("<ctype.h>")
       registerHeader("src/main/resources/headers", "\"ht.h\"")
@@ -135,6 +141,24 @@ class TestWC extends FunSuite {
     val sortcmd = "sort %s -o %s".format(outcountpath, outcountpath)
     sortcmd.!!
     assert(isEqual(Paths.get(outcountpath), Paths.get("src/test/resources/wc1G.txt")))
+    cleanup(filesToDelete.toList)
+  }
+
+  test("Wordcount: Word split at boundary") {
+    val outcodepath = "src/test/resources/testwc.c"
+    makeDriver("/text.txt").emitMyCode(outcodepath)
+    val filesToDelete = new ListBuffer[String]()
+    filesToDelete += execname
+    filesToDelete += outcountpath
+    cleanup(filesToDelete.toList)
+    filesToDelete += outcodepath
+    val compile = "mpicc %s %s -o %s".format(outcodepath, includeFlags, execname)
+    compile.!!
+    val nprocs = 4
+    "mpirun -np %s --mca btl ^openib %s 0".format(nprocs, execname) #>> new File(outcountpath) !
+    val sortcmd = "sort %s -o %s".format(outcountpath, outcountpath)
+    sortcmd.!!
+    assert(isEqual(Paths.get(outcountpath), Paths.get("src/test/resources/wctext.txt")))
     cleanup(filesToDelete.toList)
   }
 }
