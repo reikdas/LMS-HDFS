@@ -45,9 +45,6 @@ trait WhitespaceOps extends HDFSOps with FileOps with MyMPIOps with CharArrayOps
           printf("%ld\n", total_count)
         }
       }
-//      else {
-//        Adapter.g.reflectWrite("printflag", Unwrap(total_count)(Adapter.CTRL)
-//      }
       buf.free
     }
     mpi_finalize()
