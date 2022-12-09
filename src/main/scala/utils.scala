@@ -13,23 +13,6 @@ trait ArgParser extends FileOps {
       case (options, "--mmap") => options + ("mmap" -> true)
     }
 
-    val loadFile = options.getOrElse("loadFile", throw new RuntimeException("No load file")).toString
-    val writeFile = options.getOrElse("writeFile", throw new RuntimeException("No write file")).toString
-    val benchFlag = if (options.exists(_._1 == "bench")) {
-      options("bench").toString.toBoolean
-    } else {
-      false
-    }
-    val printFlag = if (options.exists(_._1 == "print")) {
-      options("print").toString.toBoolean
-    } else {
-      false
-    }
-    val readFunc: (Rep[Int], Rep[LongArray[Char]], Rep[Long]) => RepArray[Char] = if (options.exists(_._1 == "mmap")) {
-      mmapFile
-    } else {
-      readFile
-    }
-    (loadFile, writeFile, readFunc, benchFlag, printFlag)
+    options
   }
 }

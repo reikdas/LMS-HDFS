@@ -1,12 +1,12 @@
 import lms.core.stub._
 import lms.macros.SourceContext
 import lms.core.Backend._
-import lms.core.{Backend, virtualize}
-import lms.thirdparty.{CCodeGenCMacro, CCodeGenLibFunction, CCodeGenMPI, CCodeGenScannerOps, LibFunction, MPIOps, ScannerOps}
+import lms.core.virtualize
+import lms.thirdparty.{CCodeGenCMacro, CCodeGenLibFunction, CCodeGenMPI, CCodeGenScannerOps}
 
 @virtualize
-trait WordCountOps extends HDFSOps with FileOps with MyMPIOps with CharArrayOps with HashMapOps {
-  def HDFSExec(paths: Rep[Array[String]], readFunc: (Rep[Int], Rep[LongArray[Char]], Rep[Long]) => RepArray[Char], benchFlag: Boolean = false, printFlag: Boolean = true) = {
+class WordCountOps extends DDLoader {
+  override def HDFSExec(paths: Rep[Array[String]], readFunc: (Rep[Int], Rep[LongArray[Char]], Rep[Long]) => RepArray[Char], benchFlag: Boolean, printFlag: Boolean) = {
     // MPI initialize
     var world_size = 0
     var world_rank = 0
@@ -184,45 +184,29 @@ trait WordCountOps extends HDFSOps with FileOps with MyMPIOps with CharArrayOps 
 }
 
 
-
-object WordCount {
+object WordCount extends ArgParser {
 
   def main(args: Array[String]): Unit = {
-    val driver = new DslDriverC[Int, Unit] with ArgParser with WordCountOps {
-      q =>
-      override val codegen = new DslGenC with CCodeGenLibFunction with CCodeGenMPI with CCodeGenCMacro with CCodeGenScannerOps {
-        override def remap(m: Typ[_]): String =
-          if (m <:< manifest[ht]) {
-            "ht"
-          } else if (m <:< manifest[hti]) {
-            "hti"
-          } else {
-            super.remap(m)
-          }
-
-        override def traverse(n: Node): Unit = n match {
-          case n @ Node(_, "printflag", _, _) =>
-          case _ => super.traverse(n)
-        }
-
-        registerHeader("<ctype.h>")
-        registerHeader("src/main/resources/headers", "\"ht.h\"")
-        val IR: q.type = q
-      }
-
-      val (loadFile, writeFile, readFunc, benchFlag, printFlag) = parseargs(args)
-
-      @virtualize
-      def snippet(dummy: Rep[Int]) = {
-        val paths = GetPaths(loadFile)
-        HDFSExec(paths, readFunc, benchFlag, printFlag)
-        paths.free
-      }
-
-      def emitMyCode() = {
-        codegen.emitSource[Int, Unit](wrapper, "Snippet", new java.io.PrintStream(writeFile))
-      }
+    val ops = new WordCountOps()
+    val options = parseargs(args)
+    val loadFile = options.getOrElse("loadFile", throw new RuntimeException("No load file")).toString
+    val writeFile = options.getOrElse("writeFile", throw new RuntimeException("No write file")).toString
+    val benchFlag = if (options.exists(_._1 == "bench")) {
+      options("bench").toString.toBoolean
+    } else {
+      false
     }
-    driver.emitMyCode()
+    val printFlag = if (options.exists(_._1 == "print")) {
+      options("print").toString.toBoolean
+    } else {
+      false
+    }
+    val mmapFlag = if (options.exists(_._1 == "mmap")) {
+      true
+    } else {
+      false
+    }
+    val driver = new DDLDriver(ops, loadFile, mmapFlag, benchFlag, printFlag) {}
+    driver.emitMyCode(writeFile)
   }
 }

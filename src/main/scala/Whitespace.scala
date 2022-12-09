@@ -1,11 +1,8 @@
-import lms.core.Backend.Node
-import lms.core.stub.{Adapter, DslDriverC, DslGenC}
 import lms.macros.SourceContext
 import lms.core.virtualize
-import lms.thirdparty.{CCodeGenCMacro, CCodeGenLibFunction, CCodeGenMPI, CCodeGenScannerOps}
 
 @virtualize
-trait WhitespaceOps extends HDFSOps with FileOps with MyMPIOps with CharArrayOps {
+class WhitespaceOps extends DDLoader {
 
   def HDFSExec(paths: Rep[Array[String]], readFunc: (Rep[Int], Rep[LongArray[Char]], Rep[Long]) => RepArray[Char], benchFlag: Boolean = false, printFlag: Boolean = true) = {
     // MPI initialize
@@ -55,30 +52,29 @@ trait WhitespaceOps extends HDFSOps with FileOps with MyMPIOps with CharArrayOps
   }
 }
 
-object Whitespace {
+object Whitespace extends ArgParser {
 
   def main(args: Array[String]): Unit = {
-    val driver = new DslDriverC[Int, Unit] with ArgParser with WhitespaceOps {
-      q =>
-      override val codegen = new DslGenC with CCodeGenLibFunction with CCodeGenMPI with CCodeGenCMacro with CCodeGenScannerOps {
-        registerHeader("<ctype.h>")
-        registerHeader("src/main/resources/headers", "\"ht.h\"")
-        val IR: q.type = q
-      }
-
-      val (loadFile, writeFile, readFunc, benchFlag, printFlag) = parseargs(args)
-
-      @virtualize
-      def snippet(dummy: Rep[Int]) = {
-        val paths = GetPaths(loadFile)
-        HDFSExec(paths, readFunc, benchFlag, printFlag)
-        paths.free
-      }
-
-      def emitMyCode() = {
-        codegen.emitSource[Int, Unit](wrapper, "Snippet", new java.io.PrintStream(writeFile))
-      }
+    val ops = new WhitespaceOps()
+    val options = parseargs(args)
+    val loadFile = options.getOrElse("loadFile", throw new RuntimeException("No load file")).toString
+    val writeFile = options.getOrElse("writeFile", throw new RuntimeException("No write file")).toString
+    val benchFlag = if (options.exists(_._1 == "bench")) {
+      options("bench").toString.toBoolean
+    } else {
+      false
     }
-    driver.emitMyCode()
+    val printFlag = if (options.exists(_._1 == "print")) {
+      options("print").toString.toBoolean
+    } else {
+      false
+    }
+    val mmapFlag = if (options.exists(_._1 == "mmap")) {
+      true
+    } else {
+      false
+    }
+    val driver = new DDLDriver(ops, loadFile, mmapFlag, benchFlag, printFlag) {}
+    driver.emitMyCode(writeFile)
   }
 }

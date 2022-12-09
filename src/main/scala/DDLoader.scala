@@ -265,6 +265,45 @@ trait HDFSOps extends LMSMore {
   }
 }
 
-abstract class DDLoader extends HDFSOps with FileOps with MyMPIOps with CharArrayOps with HashMapOps {
+trait DDLoader extends HDFSOps with FileOps with MyMPIOps with CharArrayOps with HashMapOps with LMSMore {
   def HDFSExec(paths: Rep[Array[String]], readFunc: (Rep[Int], Rep[LongArray[Char]], Rep[Long]) => RepArray[Char], benchFlag: Boolean, printFlag: Boolean): Unit
+}
+
+class DDLDriver(plugin: DDLoader, loadFile: String, mmapFlag: Boolean, benchFlag: Boolean, printFlag: Boolean) extends DslDriverC[Int, Unit] with HDFSOps with HashMapOps with FileOps {
+  q =>
+  override val codegen = new DslGenC with CCodeGenLibFunction with CCodeGenMPI with CCodeGenCMacro with CCodeGenScannerOps {
+    override def remap(m: Typ[_]): String =
+      if (m <:< manifest[ht]) {
+        "ht"
+      } else if (m <:< manifest[hti]) {
+        "hti"
+      } else {
+        super.remap(m)
+      }
+
+    override def traverse(n: Node): Unit = n match {
+      case n@Node(_, "printflag", _, _) =>
+      case _ => super.traverse(n)
+    }
+
+    registerHeader("<ctype.h>")
+    registerHeader("src/main/resources/headers", "\"ht.h\"")
+    val IR: q.type = q
+  }
+
+  @virtualize
+  def snippet(dummy: Rep[Int]) = {
+    val paths = GetPaths(loadFile).asInstanceOf[plugin.Rep[Array[String]]]
+    val readFunc: (plugin.Rep[Int], plugin.Rep[plugin.LongArray[Char]], plugin.Rep[Long]) => plugin.RepArray[Char] = if (mmapFlag) {
+      mmapFile.asInstanceOf[(plugin.Rep[Int], plugin.Rep[plugin.LongArray[Char]], plugin.Rep[Long]) => plugin.RepArray[Char]]
+    } else {
+      readFile.asInstanceOf[(plugin.Rep[Int], plugin.Rep[plugin.LongArray[Char]], plugin.Rep[Long]) => plugin.RepArray[Char]]
+    }
+    plugin.HDFSExec(paths, readFunc, benchFlag, printFlag)
+//    paths.free
+  }
+
+  def emitMyCode(writeFile: String) = {
+    codegen.emitSource[Int, Unit](wrapper, "Snippet", new java.io.PrintStream(writeFile))
+  }
 }
