@@ -1,4 +1,4 @@
-class ArgParser {
+trait ArgParser extends FileOps {
 
   def parseargs(args: Array[String]) = {
     implicit class RegexOps(sc: StringContext) {
@@ -10,7 +10,7 @@ class ArgParser {
       case (options, r"--writeFile=(\w+.c)$e") => options + ("writeFile" -> e)
       case (options, "--bench") => options + ("bench" -> true)
       case (options, "--print") => options + ("print" -> true)
-//      case (options, "--mmap") => options + ("mmap" -> true)
+      case (options, "--mmap") => options + ("mmap" -> true)
     }
 
     val loadFile = options.getOrElse("loadFile", throw new RuntimeException("No load file")).toString
@@ -25,11 +25,11 @@ class ArgParser {
     } else {
       false
     }
-//    val readFunc: (Rep[Int], Rep[LongArray[Char]], Rep[Long]) => RepArray[Char] = if (options.exists(_._1 == "mmap")) {
-//      mmapFile
-//    } else {
-//      readFile
-//    }
-    (loadFile, writeFile, benchFlag, printFlag)
+    val readFunc: (Rep[Int], Rep[LongArray[Char]], Rep[Long]) => RepArray[Char] = if (options.exists(_._1 == "mmap")) {
+      mmapFile
+    } else {
+      readFile
+    }
+    (loadFile, writeFile, readFunc, benchFlag, printFlag)
   }
 }

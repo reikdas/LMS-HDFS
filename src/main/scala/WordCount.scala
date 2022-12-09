@@ -183,23 +183,12 @@ trait WordCountOps extends HDFSOps with FileOps with MyMPIOps with CharArrayOps 
   }
 }
 
-object WordCount extends ArgParser with WordCountOps {
+
+
+object WordCount {
 
   def main(args: Array[String]): Unit = {
-
-    val (loadFile, writeFile, benchFlag, printFlag) = parseargs(args)
-
-    val options: Map[String, Any] = args.toList.foldLeft(Map[String, Any]()) {
-      case (options, "--mmap") => options + ("mmap" -> true)
-    }
-
-    val readFunc: (Rep[Int], Rep[LongArray[Char]], Rep[Long]) => RepArray[Char] = if (options.exists(_._1 == "mmap")) {
-      mmapFile
-    } else {
-      readFile
-    }
-
-    val driver = new DslDriverC[Int, Unit] {
+    val driver = new DslDriverC[Int, Unit] with ArgParser with WordCountOps {
       q =>
       override val codegen = new DslGenC with CCodeGenLibFunction with CCodeGenMPI with CCodeGenCMacro with CCodeGenScannerOps {
         override def remap(m: Typ[_]): String =
@@ -221,6 +210,8 @@ object WordCount extends ArgParser with WordCountOps {
         val IR: q.type = q
       }
 
+      val (loadFile, writeFile, readFunc, benchFlag, printFlag) = parseargs(args)
+
       @virtualize
       def snippet(dummy: Rep[Int]) = {
         val paths = GetPaths(loadFile)
@@ -228,10 +219,10 @@ object WordCount extends ArgParser with WordCountOps {
         paths.free
       }
 
-      def emitMyCode(path: String) = {
-        codegen.emitSource[Int, Unit](wrapper, "Snippet", new java.io.PrintStream(path))
+      def emitMyCode() = {
+        codegen.emitSource[Int, Unit](wrapper, "Snippet", new java.io.PrintStream(writeFile))
       }
     }
-    driver.emitMyCode(writeFile)
+    driver.emitMyCode()
   }
 }
