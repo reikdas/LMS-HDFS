@@ -23,8 +23,6 @@ trait FileOps extends LMSMore {
 
 @virtualize
 trait HashMapOps extends LMSMore {
-  class ht
-
   def ht_create() = unchecked[Array[ht]]("ht_create()")
 
   def ht_destroy(tab: Rep[Array[ht]]) = libFunction[Array[ht]]("ht_destroy", Unwrap(tab))(Seq(0), Seq(), Set())
@@ -45,8 +43,6 @@ trait HashMapOps extends LMSMore {
     libFunction2[Unit]("ht_set", Unwrap(tab), Unwrap(arr), Unwrap(value))(Seq(Unwrap(tab), Unwrap(effectkey)), Seq(Unwrap(tab)), Set())
   }
 
-  class hti
-
   def ht_iterator(tab: Rep[Array[ht]]) = libFunction[hti]("ht_iterator", Unwrap(tab))(Seq(0), Seq(), Set())
 
   def ht_next(iter: Rep[hti]) = libFunction[Boolean]("ht_next", Unwrap(iter))(Seq(0), Seq(0), Set(0))
@@ -54,18 +50,14 @@ trait HashMapOps extends LMSMore {
   def hti_value(iter: Rep[hti]) = libFunction[Long]("hti_value", Unwrap(iter))(Seq(0), Seq(), Set(0))
 
   def hti_key(iter: Rep[hti]) = libFunction[Array[Char]]("hti_key", Unwrap(iter))(Seq(0), Seq(), Set(0))
+
+  class ht
+
+  class hti
 }
 
 @virtualize
 trait CharArrayOps extends LMSMore with OrderingOps {
-  case class RepString(arr: RepArray[Char], start: Rep[Int], length: Rep[Int]) {
-    def apply(idx: Rep[Int]) = arr(idx)
-
-    def update(idx: Rep[Int], something: Rep[Char]): Unit = {
-      arr(idx) = something
-    }
-  }
-
   def isspace(c: Rep[Char]) = libFunction[Boolean]("isspace", Unwrap(c))(Seq[Int](0), Seq(), Set())
 
   def strncpy(str1: Rep[Array[Char]], str2: Rep[Array[Char]], length: Int) =
@@ -92,6 +84,14 @@ trait CharArrayOps extends LMSMore with OrderingOps {
       case _ => arr
     }
     libFunction2[Int]("strlen", Unwrap(arr))(Seq(Unwrap(effectkey)), Seq(), Set())
+  }
+
+  case class RepString(arr: RepArray[Char], start: Rep[Int], length: Rep[Int]) {
+    def apply(idx: Rep[Int]) = arr(idx)
+
+    def update(idx: Rep[Int], something: Rep[Char]): Unit = {
+      arr(idx) = something
+    }
   }
 }
 
@@ -138,18 +138,6 @@ trait MyMPIOps extends LibFunction with ArrayOps with MPIOps {
 @virtualize
 trait LMSMore extends ArrayOps with LibFunction with ScannerOps {
 
-  case class RepArray[T: Manifest](value: Rep[LongArray[T]], length: Rep[Int]) {
-    def apply(idx: Rep[Long]): Rep[T] = value(idx)
-
-    def update(idx: Rep[Long], something: Rep[T]): Unit = {
-      value(idx) = something
-    }
-
-    def slice(s: Rep[Long], e: Rep[Long]) = value.slice(s, e)
-
-    def free = value.free
-  }
-
   def ListToArr(l: ListBuffer[String]): Rep[Array[String]] = {
     val arr = NewArray[String](l.size)
     for (i <- 0 until l.size: Range) {
@@ -167,11 +155,6 @@ trait LMSMore extends ArrayOps with LibFunction with ScannerOps {
   def mmap2[T: Manifest](fd: Rep[Int], len: Rep[Long]) = (libFunction[LongArray[T]]("mmap",
     lms.core.Backend.Const(0), Unwrap(len), Unwrap(prot), Unwrap(fd), lms.core.Backend.Const(0))(Seq[Int](), Seq[Int](), Set[Int]()))
 
-  def libFunction2[T: Manifest](m: String, rhs: lms.core.Backend.Exp*)(rkeys: Seq[lms.core.Backend.Exp], wkeys: Seq[lms.core.Backend.Exp], pkeys: Set[Int]): Rep[T] = {
-    val defs = Seq(lms.core.Backend.Const(m), lms.core.Backend.Const(pkeys)) ++ rhs
-    Wrap[T](Adapter.g.reflectEffect("lib-function", defs: _*)(rkeys: _*)(wkeys: _*))
-  }
-
   def memcpy2[T: Manifest](destination: Rep[LongArray[T]], source: Rep[LongArray[T]], num: Rep[Long]) = {
     val desteffectkey = destination match {
       case EffectView(x, base) => base
@@ -182,6 +165,23 @@ trait LMSMore extends ArrayOps with LibFunction with ScannerOps {
       case _ => source
     }
     libFunction2[Unit]("memcpy", Unwrap(destination), Unwrap(source), Unwrap(num))(Seq(Unwrap(srceffectkey)), Seq(Unwrap(desteffectkey)), Set())
+  }
+
+  def libFunction2[T: Manifest](m: String, rhs: lms.core.Backend.Exp*)(rkeys: Seq[lms.core.Backend.Exp], wkeys: Seq[lms.core.Backend.Exp], pkeys: Set[Int]): Rep[T] = {
+    val defs = Seq(lms.core.Backend.Const(m), lms.core.Backend.Const(pkeys)) ++ rhs
+    Wrap[T](Adapter.g.reflectEffect("lib-function", defs: _*)(rkeys: _*)(wkeys: _*))
+  }
+
+  case class RepArray[T: Manifest](value: Rep[LongArray[T]], length: Rep[Int]) {
+    def apply(idx: Rep[Long]): Rep[T] = value(idx)
+
+    def update(idx: Rep[Long], something: Rep[T]): Unit = {
+      value(idx) = something
+    }
+
+    def slice(s: Rep[Long], e: Rep[Long]) = value.slice(s, e)
+
+    def free = value.free
   }
 }
 
@@ -294,13 +294,12 @@ class DDLDriver(plugin: DDLoader, loadFile: String, mmapFlag: Boolean, benchFlag
   @virtualize
   def snippet(dummy: Rep[Int]) = {
     val paths = GetPaths(loadFile).asInstanceOf[plugin.Rep[Array[String]]]
-    val readFunc: (plugin.Rep[Int], plugin.Rep[plugin.LongArray[Char]], plugin.Rep[Long]) => plugin.RepArray[Char] = if (mmapFlag) {
-      mmapFile.asInstanceOf[(plugin.Rep[Int], plugin.Rep[plugin.LongArray[Char]], plugin.Rep[Long]) => plugin.RepArray[Char]]
+    val readFunc = if (mmapFlag) {
+      mmapFile _
     } else {
-      readFile.asInstanceOf[(plugin.Rep[Int], plugin.Rep[plugin.LongArray[Char]], plugin.Rep[Long]) => plugin.RepArray[Char]]
+      readFile _
     }
-    plugin.HDFSExec(paths, readFunc, benchFlag, printFlag)
-//    paths.free
+    plugin.HDFSExec(paths, readFunc.asInstanceOf[(plugin.Rep[Int], plugin.Rep[plugin.LongArray[Char]], plugin.Rep[Long]) => plugin.RepArray[Char]], benchFlag, printFlag)
   }
 
   def emitMyCode(writeFile: String) = {

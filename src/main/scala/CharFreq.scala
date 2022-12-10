@@ -55,6 +55,7 @@ class CharFreqOps extends DDLoader {
       val end = mpi_wtime()
       printf("Proc %d spent %lf time.\n", rank, end - start)
     }
+    paths.free
   }
 }
 

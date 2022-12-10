@@ -49,6 +49,7 @@ class WhitespaceOps extends DDLoader {
       val end = mpi_wtime()
       printf("Proc %d spent %lf time.\n", world_rank, end - start)
     }
+    paths.free
   }
 }
 

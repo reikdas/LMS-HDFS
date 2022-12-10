@@ -1,56 +1,15 @@
-import lms.core.stub._
-import lms.core.virtualize
-import lms.thirdparty.{CCodeGenCMacro, CCodeGenLibFunction, CCodeGenMPI, CCodeGenScannerOps}
 import org.scalatest.FunSuite
 
-import java.io.{File, IOException}
-import java.nio.file.{Files, Path, Paths}
-import java.util
+import java.io.File
 import scala.collection.mutable.ListBuffer
 import scala.sys.process._
 
 // Ensure Hadoop is running in the background
-class TestWS extends FunSuite {
+class TestWS extends FunSuite with Utils {
 
-  def makeDriver(filepath: String) = new DslDriverC[Int, Unit] with WhitespaceOps {
-    q =>
-    override val codegen = new DslGenC with CCodeGenLibFunction with CCodeGenMPI with CCodeGenCMacro with CCodeGenScannerOps {
-      registerHeader("<ctype.h>")
-      registerHeader("src/main/resources/headers", "\"ht.h\"")
-      val IR: q.type = q
-    }
-
-    @virtualize
-    def snippet(dummy: Rep[Int]) = {
-      val paths = GetPaths(filepath)
-      HDFSExec(paths, mmapFile)
-      paths.free
-    }
-
-    def emitMyCode(outpath: String) = {
-      codegen.emitSource[Int, Unit](wrapper, "Snippet", new java.io.PrintStream(outpath))
-    }
-  }
-
-  def cleanup(files: List[String]) = {
-    for (file <- files) {
-      new File(file).delete()
-    }
-  }
-
-  private def isEqual(firstFile: Path, secondFile: Path): Boolean = {
-    try {
-      if (Files.size(firstFile) != Files.size(secondFile)) return false
-      val first = Files.readAllBytes(firstFile)
-      val second = Files.readAllBytes(secondFile)
-      return util.Arrays.equals(first, second)
-    } catch {
-      case e: IOException =>
-        e.printStackTrace()
-    }
-    false
-  }
-
+  val ops = new WhitespaceOps()
+  val benchFlag = false
+  val printFlag = true
   val execname = "src/test/resources/testws"
   val outcountpath = "src/test/resources/testws.txt"
   val lms_path = sys.props.get("LMS_PATH").get
@@ -59,7 +18,8 @@ class TestWS extends FunSuite {
 
   test("Whitespace 1G: num_blocks = num_procs") {
     val outcodepath = "src/test/resources/testws.c"
-    makeDriver("/1G.txt").emitMyCode(outcodepath)
+    val driver = new DDLDriver(ops, "/1G.txt", true, benchFlag, printFlag) {}
+    driver.emitMyCode(outcodepath)
     val filesToDelete = new ListBuffer[String]()
     filesToDelete += execname
     filesToDelete += outcountpath
@@ -76,7 +36,8 @@ class TestWS extends FunSuite {
 
   test("Whitespace 1G: num_blocks/2 = num_procs") {
     val outcodepath = "src/test/resources/testws.c"
-    makeDriver("/1G.txt").emitMyCode(outcodepath)
+    val driver = new DDLDriver(ops, "/1G.txt", true, benchFlag, printFlag) {}
+    driver.emitMyCode(outcodepath)
     val filesToDelete = new ListBuffer[String]()
     filesToDelete += execname
     filesToDelete += outcountpath
@@ -93,7 +54,8 @@ class TestWS extends FunSuite {
 
   test("Whitespace 1G: num_blocks%num_procs != 0") {
     val outcodepath = "src/test/resources/testws.c"
-    makeDriver("/1G.txt").emitMyCode(outcodepath)
+    val driver = new DDLDriver(ops, "/1G.txt", true, benchFlag, printFlag) {}
+    driver.emitMyCode(outcodepath)
     val filesToDelete = new ListBuffer[String]()
     filesToDelete += execname
     filesToDelete += outcountpath
@@ -110,7 +72,8 @@ class TestWS extends FunSuite {
 
   test("Whitespace 1G: num_procs == 1") {
     val outcodepath = "src/test/resources/testws.c"
-    makeDriver("/1G.txt").emitMyCode(outcodepath)
+    val driver = new DDLDriver(ops, "/1G.txt", true, benchFlag, printFlag) {}
+    driver.emitMyCode(outcodepath)
     val filesToDelete = new ListBuffer[String]()
     filesToDelete += execname
     filesToDelete += outcountpath

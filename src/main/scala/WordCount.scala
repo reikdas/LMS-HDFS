@@ -1,8 +1,6 @@
 import lms.core.stub._
 import lms.macros.SourceContext
-import lms.core.Backend._
 import lms.core.virtualize
-import lms.thirdparty.{CCodeGenCMacro, CCodeGenLibFunction, CCodeGenMPI, CCodeGenScannerOps}
 
 @virtualize
 class WordCountOps extends DDLoader {
@@ -180,9 +178,9 @@ class WordCountOps extends DDLoader {
       val end = mpi_wtime()
       printf("Proc %d spent %lf time.\n", world_rank, end - start)
     }
+    paths.free
   }
 }
-
 
 object WordCount extends ArgParser {
 
