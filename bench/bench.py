@@ -1,9 +1,10 @@
-import subprocess
+import os
 import shlex
+import subprocess
 from pathlib import Path
 from statistics import mean
 
-lmshdfs_path = Path(__file__).parent.absolute()
+lmshdfs_path = Path(__file__).parent.parent.absolute()
 lms_path = "/home/reikdas/Research/lms-clean" # FIXME: Get from build.sbt
 
 def find_between(s, start, end):
@@ -27,16 +28,16 @@ if __name__ == "__main__":
                 else:
                     formatflag = "--mmap"
                 print("With {0}".format(rformat))
-                with open("bench{0}{1}{2}.csv".format(scalaclass, key[1:-4], rformat), "w") as f:
-                    subprocess.run(shlex.split("sbt \"runMain {0} --loadFile={1} --writeFile=bench.c --bench {2}\"".format(scalaclass, key, formatflag)))
-                    subprocess.run(shlex.split("mpicc -O3 bench.c {0} -o bench".format(includeFlags)))
+                with open(os.path.join(lmshdfs_path, "bench", "bench{0}{1}{2}.csv".format(scalaclass, key[1:-4], rformat)), "w") as f:
+                    subprocess.run(shlex.split("sbt \"runMain {0} --loadFile={1} --writeFile=bench.c --bench {2}\"".format(scalaclass, key, formatflag)), cwd=lmshdfs_path)
+                    subprocess.run(shlex.split("mpicc -O3 bench.c {0} -o benchexec".format(includeFlags)), cwd=lmshdfs_path)
                     for value in values:
                         print("Num threads = {0}".format(value))
-                        subprocess.run(shlex.split("mpirun -np {0} --mca btl ^openib -map-by numa bench 0".format(value))) # Get the program in cache
+                        subprocess.run(shlex.split("mpirun -np {0} --mca btl ^openib -map-by numa benchexec 0".format(value)), cwd=lmshdfs_path) # Get the program in cache
                         maxtimes = []
                         for i in range(5):
                             print("{0}th run".format(i))
-                            output = subprocess.run(shlex.split("mpirun -np {0} --mca btl ^openib -map-by numa bench 0".format(value)), capture_output=True)
+                            output = subprocess.run(shlex.split("mpirun -np {0} --mca btl ^openib -map-by numa benchexec 0".format(value)), capture_output=True, cwd=lmshdfs_path)
                             output = output.stdout.decode("utf-8")
                             times = []
                             for line in output.split("\n")[:-1]:
