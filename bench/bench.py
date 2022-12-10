@@ -5,7 +5,7 @@ from pathlib import Path
 from statistics import mean
 
 lmshdfs_path = Path(__file__).resolve().parent.parent.absolute()
-lms_path = "/homes/das160/lms-clean" # FIXME: Get from build.sbt
+lms_path = "/home/reikdas/Research/lms-clean" # FIXME: Get from build.sbt
 
 def find_between(s, start, end):
     return (s.split(start))[1].split(end)[0]
