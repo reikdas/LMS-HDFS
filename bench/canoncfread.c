@@ -4,13 +4,14 @@
 #include <fcntl.h>
 #include "scanner_header.h"
 #include <time.h>
+#include <stdlib.h>
 
 int main(int argc, char *argv[]) {
     clock_t t;
     t = clock();
     int fd = open(argv[1], 0);
     long size = fsize(fd);
-    char *buf = (char*)calloc(size, sizeof(char));
+    char *buf = (char*)malloc(sizeof(char) * size);
     int sread = read(fd, buf, size);
     long* arr = calloc(26, sizeof(long));
     for(long i=0; i<sread; i++) {
@@ -21,9 +22,15 @@ int main(int argc, char *argv[]) {
         arr[c-97] += 1;
       }
     }
+    free(buf);
+    free(arr);
+    close(fd);
     t = clock() - t;
     double time_taken = ((double)t)/CLOCKS_PER_SEC;
-    printf("%f\n", time_taken);
+    printf("%0.3f\n", time_taken);
+    for (int i=0; i<26; i++) {
+      printf("%ld\n", arr[i]);
+    }
     return 0;
 }
 

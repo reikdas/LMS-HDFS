@@ -5,7 +5,7 @@ from pathlib import Path
 from statistics import mean
 
 lmshdfs_path = Path(__file__).resolve().parent.parent.absolute()
-lms_path = "/home/reikdas/Research/lms-clean" # FIXME: Get from build.sbt
+lms_path = "/homes/das160/lms-clean" # FIXME: Get from build.sbt
 
 def find_between(s, start, end):
     return (s.split(start))[1].split(end)[0]
@@ -13,10 +13,10 @@ def find_between(s, start, end):
 if __name__ == "__main__":
     conf = {
             "/1G.txt": [1, 2, 4, 8],
-            #"/10G.txt": [1, 2, 4, 8, 16, 32, 64, 79],
-            #"/50G.txt": [1, 2, 4, 8, 16, 32, 64, 96],
-            #"/100G.txt": [1, 2, 4, 8, 16, 32, 64, 96],
-            #"/200G.txt": [1, 2, 4, 8, 16, 32, 64, 96]
+            "/10G.txt": [1, 2, 4, 8, 16, 32, 64, 79],
+            "/50G.txt": [1, 2, 4, 8, 16, 32, 64, 96],
+            "/100G.txt": [1, 2, 4, 8, 16, 32, 64, 96],
+            "/200G.txt": [1, 2, 4, 8, 16, 32, 64, 96]
             }
     classes = ["WordCount", "CharFreq", "Whitespace"]
     includeFlags = "-I {0}/src/main/resources/headers/ -I {1}/src/main/resources/headers/".format(lmshdfs_path, lms_path)
