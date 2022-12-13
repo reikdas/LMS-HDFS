@@ -4,8 +4,16 @@ project/
 target/
 .bsp/
 .idea/
+.metals/
+.vscode/
+**/*/a.out
 
 hs_err_pid*
 
 # Test
 **/*/testwc*
+
+# Benchmark
+**/*/benchcanon*
+benchmmap*
+benchread*
