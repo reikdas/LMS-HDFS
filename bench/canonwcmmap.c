@@ -29,12 +29,11 @@ int main(int argc, char *argv[]) {
             start = end;
         }
     }
-    free(buf);
-    free(tmp);
     close(fd);
     t = clock() - t;
     double time_taken = ((double)t)/CLOCKS_PER_SEC;
     printf("%0.3f\n", time_taken);
+    free(tmp);
     hti x63 = ht_iterator(z);
     while (ht_next(&x63))
         printf("%s %ld\n", hti_key(&x63), hti_value(&x63));
