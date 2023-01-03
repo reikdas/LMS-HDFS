@@ -5,7 +5,7 @@ from pathlib import Path
 from statistics import mean
 
 root_path = Path(__file__).resolve().parent.parent.absolute()
-lms_path = "/homes/das160/lms-clean" # FIXME: Get from build.sbt
+lms_path = os.path.join(lmshdfs_path, "lms-clean")
 
 if __name__ == "__main__":
     filenames = ["1G.txt", "10G.txt", "50G.txt", "100G.txt", "200G.txt"]

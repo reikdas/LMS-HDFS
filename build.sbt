@@ -21,7 +21,7 @@ parallelExecution in Test := false
 
 addCompilerPlugin("org.scalamacros" % "paradise" % paradiseVersion cross CrossVersion.full)
 
-val lms_loc = "/homes/das160/lms-clean"
+val lms_loc = "lms-clean"
 lazy val lms = ProjectRef(file(lms_loc), "lms-clean")
 val lms_path = sys.props.getOrElseUpdate("LMS_PATH", lms_loc)
 
