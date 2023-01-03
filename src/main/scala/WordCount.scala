@@ -27,23 +27,14 @@ class WordCountOps extends DDLoader {
 
       // New variables for handling split words
       val buf2 = NewLongArray[Char](GetBlockLen() + 1, Some(0)) // Buffer to hold characters from second file (only ReadFile)
+      val buf3 = NewLongArray[Char](GetBlockLen() + 1, Some(0)) // Buffer to hold characters from next process
+      var tmpbuf4 = NewLongArray[Char](GetBlockLen() * 2, Some(0)) // Temporary combined buffer
       var block_num2: Var[Int] = 0
 
       var nextIsSplit: Var[Boolean] = false
       for (i <- 0 until blocks_per_proc) {
         val idx = (world_rank * blocks_per_proc) + i
         if (idx < paths.length) { // Since blocks_per_proc is the upper bound
-          // Check if first block contains split word from last block of previous process
-          var lastIsSplit: Var[Boolean] = false
-          if (world_rank != 0 && i == 0) {
-            val lastidx = idx - 1
-            val lastblock_num = open(paths(lastidx))
-            val lastsize = filelen(lastblock_num)
-            val lastfpointer = readFunc(lastblock_num, buf, lastsize)
-            Adapter.g.reflectWrite("printflag", Unwrap(lastfpointer(0L)))(Adapter.CTRL)
-            val lastchar = lastfpointer(lastfpointer.length - 1)
-            if (!isspace(lastchar)) lastIsSplit = true
-          }
           val block_num: Rep[Int] = if (nextIsSplit == true) {
             block_num2
           } else {
@@ -51,18 +42,37 @@ class WordCountOps extends DDLoader {
           }
           val fpointer: RepArray[Char] = readFunc(block_num, buf, filelen(block_num)) // Do I need to open file if already open?
           var start: Var[Long] = 0L
-          if (lastIsSplit == true || nextIsSplit == true) { // If first word is a split word, skip it
+
+          if (i==0 && world_rank != 0) {
+            while ((start < fpointer.length) && !isspace(fpointer((start)))) start = start + 1L
+            mpi_send(start, 1, mpi_long, world_rank - 1, 0, mpi_comm_world)
+            mpi_send(fpointer.value(0L), start.toInt, mpi_char, world_rank - 1, 0, mpi_comm_world)
+          } else if (nextIsSplit == true) { // If first word is a split word, skip it
             while ((start < fpointer.length) && !isspace(fpointer((start)))) start = start + 1L
           }
-          while (start < fpointer.length) {
-            while (start < (fpointer.length) && isspace(fpointer(start))) start = start + 1L
-            if (start < fpointer.length) {
+
+          val len_rec = NewArray0[Long](1)
+          if ((i==blocks_per_proc - 1) && (world_rank != world_size - 1)) {
+            mpi_rec(len_rec(0), 1, mpi_long, world_rank + 1, 0, mpi_comm_world)
+            mpi_rec(buf3, len_rec(0).toInt, mpi_char, world_rank + 1, 0, mpi_comm_world)
+            memcpy2(tmpbuf4, fpointer.value, fpointer.length)
+            memcpy2(tmpbuf4.slice(fpointer.length, -1L), buf3, len_rec(0))
+            RepArray(tmpbuf4, fpointer.length + len_rec(0).toInt)
+          } else {
+            tmpbuf4 = fpointer.value
+          }
+
+          val buf4 = RepArray(tmpbuf4, fpointer.length + len_rec(0).toInt)
+
+          while (start < buf4.length) {
+            while (start < (buf4.length) && isspace(buf4(start))) start = start + 1L
+            if (start < buf4.length) {
               var end: Var[Long] = start + 1L
-              while ((end < fpointer.length) && !isspace(fpointer(end))) end = end + 1L
+              while ((end < buf4.length) && !isspace(buf4(end))) end = end + 1L
               var off: Var[Long] = 0L
               nextIsSplit = false
-              if (end.toInt == fpointer.length) {
-                if (!isspace(fpointer(end - 1)) && (idx < paths.length - 1)) { // Check if last word is split
+              if (end.toInt == buf4.length) {
+                if (!isspace(buf4(end - 1)) && (idx < paths.length - 1)) { // Check if last word is split
                   nextIsSplit = true
                 } else {
                   off = 1L
@@ -78,7 +88,7 @@ class WordCountOps extends DDLoader {
                 var arrcounter = 0L
                 var j: Var[Long] = start
                 while (j < end) {
-                  word(arrcounter) = fpointer(j)
+                  word(arrcounter) = buf4(j)
                   j = j + 1L
                   arrcounter = arrcounter + 1L
                 }
@@ -89,7 +99,7 @@ class WordCountOps extends DDLoader {
                   arrcounter = arrcounter + 1L
                 }
               } else {
-                memcpy2(word, fpointer.slice(start, -1L), len)
+                memcpy2(word, buf4.slice(start, -1L), len)
               }
               word(len) = '\0'
               val value = ht_get(idxmap, word)
@@ -172,6 +182,7 @@ class WordCountOps extends DDLoader {
       word.free
       buf.free
       buf2.free
+//      buf3.free
     }
     mpi_finalize()
     if (benchFlag) {

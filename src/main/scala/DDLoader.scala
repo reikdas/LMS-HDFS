@@ -172,6 +172,10 @@ trait LMSMore extends ArrayOps with LibFunction with ScannerOps {
     Wrap[T](Adapter.g.reflectEffect("lib-function", defs: _*)(rkeys: _*)(wkeys: _*))
   }
 
+  implicit class LongArrayOps2[A: Manifest](x: Var[LongArray[A]]) {
+    def slice(s: Rep[Long], e: Rep[Long] = unit(-1L)): Rep[LongArray[A]] = EffectView[LongArray[A]](Wrap[LongArray[A]](Adapter.g.reflect("array_slice", Unwrap(x), Unwrap(s), Unwrap(e))), x) // FIXME: borrowing effect?
+  }
+
   case class RepArray[T: Manifest](value: Rep[LongArray[T]], length: Rep[Int]) {
     def apply(idx: Rep[Long]): Rep[T] = value(idx)
 
