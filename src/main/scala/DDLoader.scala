@@ -102,6 +102,9 @@ trait MyMPIOps extends LibFunction with ArrayOps with MPIOps {
   def mpi_rec[T: Manifest](data: Rep[T], count: Rep[Int], datatype: Rep[MPIDataType], source: Rep[Int], tag: Rep[Int], world: Rep[MPIComm]) =
     unchecked[Unit]("MPI_Recv(&", data, ", ", count, ",", datatype, ", ", source, ", ", tag, ", ", world, ", MPI_STATUS_IGNORE)")
 
+  def mpi_rec2[T: Manifest](data: Rep[T], count: Rep[Int], datatype: Rep[MPIDataType], source: Rep[Int], tag: Rep[Int], world: Rep[MPIComm]) =
+    unchecked[Unit]("MPI_Recv(", data, ", ", count, ",", datatype, ", ", source, ", ", tag, ", ", world, ", MPI_STATUS_IGNORE)")
+
   def mpi_allgather(sendbuf: Rep[LongArray[Long]], sendcount: Rep[Long], sendtype: Rep[MPIDataType], recvbuf: Rep[LongArray[Long]],
                     recvcount: Rep[Long], recvtype: Rep[MPIDataType], comm: Rep[MPIComm]) =
     libFunction[Unit]("MPI_Allgather", Unwrap(sendbuf), Unwrap(sendcount), Unwrap(sendtype), Unwrap(recvbuf), Unwrap(recvcount),
@@ -165,6 +168,10 @@ trait LMSMore extends ArrayOps with LibFunction with ScannerOps {
       case _ => source
     }
     libFunction2[Unit]("memcpy", Unwrap(destination), Unwrap(source), Unwrap(num))(Seq(Unwrap(srceffectkey)), Seq(Unwrap(desteffectkey)), Set())
+  }
+
+  def memcpy3[T: Manifest](destination: Rep[LongArray[T]], source: Rep[T], num: Rep[Long]) = {
+    unchecked[Unit]("memcpy(", destination, ",&", source, ", ", num, ")")
   }
 
   def libFunction2[T: Manifest](m: String, rhs: lms.core.Backend.Exp*)(rkeys: Seq[lms.core.Backend.Exp], wkeys: Seq[lms.core.Backend.Exp], pkeys: Set[Int]): Rep[T] = {

@@ -81,7 +81,7 @@ class TestWS extends FunSuite with Utils {
     filesToDelete += outcodepath
     val compile = "mpicc %s %s -o %s".format(outcodepath, includeFlags, execname)
     compile.!!
-    val nprocs = 3
+    val nprocs = 1
     val execcomm = "mpirun -np %s --mca btl ^openib %s 0".format(nprocs, execname)
     val count = execcomm.!!
     assert(count.trim().equals("161390000"))

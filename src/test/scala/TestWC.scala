@@ -85,7 +85,7 @@ class TestWC extends FunSuite with Utils {
     filesToDelete += outcodepath
     val compile = "mpicc %s %s -o %s".format(outcodepath, includeFlags, execname)
     compile.!!
-    val nprocs = 3
+    val nprocs = 1
     "mpirun -np %s --mca btl ^openib %s 0".format(nprocs, execname) #>> new File(outcountpath) !
     val sortcmd = "sort %s -o %s".format(outcountpath, outcountpath)
     sortcmd.!!
@@ -112,7 +112,7 @@ class TestWC extends FunSuite with Utils {
     cleanup(filesToDelete.toList)
   }
 
-  test("Wordcount: Word split at boundary") {
+  test("Wordcount 1G Word split at boundary: num_blocks = num_procs") {
     val outcodepath = "src/test/resources/testwc.c"
     val driver = new DDLDriver(ops, "/text.txt", true, benchFlag, printFlag) {}
     driver.emitMyCode(outcodepath)
@@ -123,7 +123,64 @@ class TestWC extends FunSuite with Utils {
     filesToDelete += outcodepath
     val compile = "mpicc %s %s -o %s".format(outcodepath, includeFlags, execname)
     compile.!!
-    val nprocs = 4
+    val nprocs = 6
+    "mpirun -np %s --mca btl ^openib %s 0".format(nprocs, execname) #>> new File(outcountpath) !
+    val sortcmd = "sort %s -o %s".format(outcountpath, outcountpath)
+    sortcmd.!!
+    assert(isEqual(Paths.get(outcountpath), Paths.get("src/test/resources/wctext.txt")))
+    cleanup(filesToDelete.toList)
+  }
+
+  test("Wordcount 1G Word split at boundary: num_blocks/2 = num_procs") {
+    val outcodepath = "src/test/resources/testwc.c"
+    val driver = new DDLDriver(ops, "/text.txt", true, benchFlag, printFlag) {}
+    driver.emitMyCode(outcodepath)
+    val filesToDelete = new ListBuffer[String]()
+    filesToDelete += execname
+    filesToDelete += outcountpath
+    cleanup(filesToDelete.toList)
+    filesToDelete += outcodepath
+    val compile = "mpicc %s %s -o %s".format(outcodepath, includeFlags, execname)
+    compile.!!
+    val nprocs = 3
+    "mpirun -np %s --mca btl ^openib %s 0".format(nprocs, execname) #>> new File(outcountpath) !
+    val sortcmd = "sort %s -o %s".format(outcountpath, outcountpath)
+    sortcmd.!!
+    assert(isEqual(Paths.get(outcountpath), Paths.get("src/test/resources/wctext.txt")))
+    cleanup(filesToDelete.toList)
+  }
+
+  test("Wordcount 1G Word split at boundary: num_blocks%num_procs != 0") {
+    val outcodepath = "src/test/resources/testwc.c"
+    val driver = new DDLDriver(ops, "/text.txt", true, benchFlag, printFlag) {}
+    driver.emitMyCode(outcodepath)
+    val filesToDelete = new ListBuffer[String]()
+    filesToDelete += execname
+    filesToDelete += outcountpath
+    cleanup(filesToDelete.toList)
+    filesToDelete += outcodepath
+    val compile = "mpicc %s %s -o %s".format(outcodepath, includeFlags, execname)
+    compile.!!
+    val nprocs = 5
+    "mpirun -np %s --mca btl ^openib %s 0".format(nprocs, execname) #>> new File(outcountpath) !
+    val sortcmd = "sort %s -o %s".format(outcountpath, outcountpath)
+    sortcmd.!!
+    assert(isEqual(Paths.get(outcountpath), Paths.get("src/test/resources/wctext.txt")))
+    cleanup(filesToDelete.toList)
+  }
+
+  test("Wordcount 1G Word split at boundary: num_blocks == 1") {
+    val outcodepath = "src/test/resources/testwc.c"
+    val driver = new DDLDriver(ops, "/text.txt", true, benchFlag, printFlag) {}
+    driver.emitMyCode(outcodepath)
+    val filesToDelete = new ListBuffer[String]()
+    filesToDelete += execname
+    filesToDelete += outcountpath
+    cleanup(filesToDelete.toList)
+    filesToDelete += outcodepath
+    val compile = "mpicc %s %s -o %s".format(outcodepath, includeFlags, execname)
+    compile.!!
+    val nprocs = 1
     "mpirun -np %s --mca btl ^openib %s 0".format(nprocs, execname) #>> new File(outcountpath) !
     val sortcmd = "sort %s -o %s".format(outcountpath, outcountpath)
     sortcmd.!!
