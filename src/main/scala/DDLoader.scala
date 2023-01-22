@@ -134,8 +134,6 @@ trait MyMPIOps extends LibFunction with ArrayOps with MPIOps {
                   root: Rep[Int], comm: Rep[MPIComm]) = {
     unchecked[Unit]("MPI_Reduce(", send_data, ", ", recv_data, ",", count, ",", datatype, ",", op, ",", root, ",", comm, ")")
   }
-
-  def mpi_wtime() = unchecked[Double]("MPI_Wtime()")
 }
 
 @virtualize

@@ -1,3 +1,4 @@
+import lms.core.stub._
 import lms.macros.SourceContext
 import lms.core.virtualize
 
@@ -9,7 +10,8 @@ class WhitespaceOps extends DDLoader {
     var world_size = 0
     var world_rank = 0
 
-    val start = mpi_wtime()
+    val start = timestamp
+    Adapter.g.reflectWrite("printflag", Unwrap(start))(Adapter.CTRL)
     mpi_init()
     mpi_comm_size(mpi_comm_world, world_size)
     mpi_comm_rank(mpi_comm_world, world_rank)
@@ -46,8 +48,9 @@ class WhitespaceOps extends DDLoader {
     }
     mpi_finalize()
     if (benchFlag) {
-      val end = mpi_wtime()
-      printf("Proc %d spent %lf time.\n", world_rank, end - start)
+      val end = timestamp
+      Adapter.g.reflectWrite("printflag", Unwrap(end))(Adapter.CTRL)
+      printf("Proc %d spent %ld time.\n", world_rank, end - start)
     }
     paths.free
   }
