@@ -6,7 +6,7 @@ target/
 .idea/
 .metals/
 .vscode/
-**/*/a.out
+a.out
 
 hs_err_pid*
 
@@ -17,3 +17,6 @@ hs_err_pid*
 **/*/benchcanon*
 benchmmap*
 benchread*
+**/*/*.jar
+**/*/benchlibhdfs*mmap
+
