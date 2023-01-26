@@ -38,7 +38,7 @@ public class HDFScf {
         }
       }
       long endTime = System.currentTimeMillis();
-      double diff = (endTime - startTime);
+      double diff = (endTime - startTime)*1000;
       System.out.println(diff);
       // for (i=0; i<26; i++) {
       //   System.out.println((char)(i+65) + " " + cf[i]);

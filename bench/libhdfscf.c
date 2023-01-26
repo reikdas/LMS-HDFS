@@ -1,7 +1,6 @@
 #include "hdfs.h"
 #include <fcntl.h>
 #include <stdio.h>
-#include <string.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/mman.h>
@@ -31,10 +30,10 @@ int main(int argc, char *argv[]) {
     hdfsPread(x2, x3, start, x5, limit);
     for (int j = 0; j < limit; j++) {
       int c = (int)x5[j];
-      if (c>=65 && c <=90) {
-        cf[c-65] += 1;
-      } else if (c >= 97 && c<=122) {
-        cf[c-97] += 1;
+      if (c >= 65 && c <= 90) {
+        cf[c - 65] += 1;
+      } else if (c >= 97 && c <= 122) {
+        cf[c - 97] += 1;
       }
     }
     start = (i * limit) + 1;
@@ -42,19 +41,19 @@ int main(int argc, char *argv[]) {
   hdfsPread(x2, x3, start, x5, remain);
   for (int j = 0; j < remain; j++) {
     int c = (int)x5[j];
-    if (c>=65 && c <=90) {
-    cf[c-65] += 1;
-    } else if (c >= 97 && c<=122) {
-    cf[c-97] += 1;
+    if (c >= 65 && c <= 90) {
+      cf[c - 65] += 1;
+    } else if (c >= 97 && c <= 122) {
+      cf[c - 97] += 1;
     }
   }
   struct timeval t2;
   gettimeofday(&t2, NULL);
   long t2s = t2.tv_sec * 1000000L + t2.tv_usec;
   printf("%ld\n", t2s - t1s);
-  // for (int i=0; i<26; i++) {
-  //   printf("%ld\n", cf[i]);
-  // }
+  for (int i=0; i<26; i++) {
+    printf("%ld\n", cf[i]);
+  }
   free(x5);
   hdfsFreeFileInfo(info, 1);
   hdfsCloseFile(x2, x3);

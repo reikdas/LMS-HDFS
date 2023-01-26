@@ -58,7 +58,7 @@ public class HDFSwc {
         i += start;
       }
       long endTime = System.currentTimeMillis();
-      double diff = (endTime - startTime);
+      double diff = (endTime - startTime)*1000;
       // for (String iter : map.keySet()) {
       //   System.out.println(iter + " " + map.get(iter));
       // }

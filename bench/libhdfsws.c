@@ -1,7 +1,6 @@
 #include "hdfs.h"
 #include <fcntl.h>
 #include <stdio.h>
-#include <string.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/mman.h>
@@ -11,7 +10,6 @@
 
 int main(int argc, char *argv[]) {
   long count = 0;
-  long start = 0;
   long buflen = 2147483645; // Integer.MAX_VALUE - 2
   struct timeval t1;
   char path[35] = "hdfs://127.0.0.1:9000";
@@ -30,7 +28,7 @@ int main(int argc, char *argv[]) {
     long diff = length - i;
     int toread = ((long)buflen) > diff ? (int)diff : buflen;
     hdfsPread(x2, x3, i, buffer, toread);
-    for (int j = 0; j<toread; j++) {
+    for (int j = 0; j < toread; j++) {
       if (buffer[j] != ' ') {
         count++;
       }
@@ -41,6 +39,7 @@ int main(int argc, char *argv[]) {
   gettimeofday(&t2, NULL);
   long t2s = t2.tv_sec * 1000000L + t2.tv_usec;
   printf("%ld\n", t2s - t1s);
+  printf("count = %ld\n", count);
   free(buffer);
   hdfsFreeFileInfo(info, 1);
   hdfsCloseFile(x2, x3);

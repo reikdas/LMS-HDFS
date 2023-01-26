@@ -33,7 +33,7 @@ public class HDFSws {
       }
       long endTime = System.currentTimeMillis();
       // System.out.println("Count = " + count);
-      double diff = (endTime - startTime);
+      double diff = (endTime - startTime)*1000;
       System.out.println(diff);
     } catch (IOException e) {
       e.printStackTrace();
