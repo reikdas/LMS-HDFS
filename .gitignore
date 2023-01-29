@@ -14,7 +14,9 @@ hs_err_pid*
 **/*/testwc*
 
 # Benchmark
-**/*/benchcanon*
+benchcanonwcmmap
+benchcanonwsmmap
+benchcanoncfmmap
 benchmmap*
 benchread*
 **/*/*.jar

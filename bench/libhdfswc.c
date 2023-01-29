@@ -56,13 +56,13 @@ int main(int argc, char *argv[]) {
   struct timeval t2;
   gettimeofday(&t2, NULL);
   long t2s = t2.tv_sec * 1000000L + t2.tv_usec;
+  printf("%ld\n", t2s - t1s);
   free(buffer);
   free(tmp);
   hti iter = ht_iterator(map);
   while (ht_next(&iter)) {
     printf("%s %ld\n", hti_key(&iter), hti_value(&iter));
   }
-  printf("%ld\n", t2s - t1s);
   hdfsFreeFileInfo(info, 1);
   hdfsCloseFile(x2, x3);
   return 0;
