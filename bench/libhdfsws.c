@@ -29,7 +29,7 @@ int main(int argc, char *argv[]) {
     int toread = ((long)buflen) > diff ? (int)diff : buflen;
     hdfsPread(x2, x3, i, buffer, toread);
     for (int j = 0; j < toread; j++) {
-      if (buffer[j] != ' ') {
+      if (buffer[j] == ' ') {
         count++;
       }
     }
