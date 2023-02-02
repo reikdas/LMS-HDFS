@@ -275,10 +275,10 @@ trait HDFSOps extends LMSMore {
 }
 
 trait DDLoader extends HDFSOps with FileOps with MyMPIOps with CharArrayOps with HashMapOps with LMSMore {
-  def HDFSExec(paths: Rep[Array[String]], readFunc: (Rep[Int], Rep[LongArray[Char]], Rep[Long]) => RepArray[Char], benchFlag: Boolean, printFlag: Boolean): Unit
+  def HDFSExec(paths: Rep[Array[String]], readFunc: (Rep[Int], Rep[LongArray[Char]], Rep[Long]) => RepArray[Char], benchFlag: Boolean, printFlag: Boolean, nproc: Boolean): Unit
 }
 
-class DDLDriver(plugin: DDLoader, loadFile: String, mmapFlag: Boolean, benchFlag: Boolean, printFlag: Boolean) extends DslDriverC[Int, Unit] with HDFSOps with HashMapOps with FileOps {
+class DDLDriver(plugin: DDLoader, loadFile: String, mmapFlag: Boolean, benchFlag: Boolean, printFlag: Boolean, nproc: Boolean) extends DslDriverC[Int, Unit] with HDFSOps with HashMapOps with FileOps {
   q =>
   override val codegen = new DslGenC with CCodeGenLibFunction with CCodeGenMPI with CCodeGenCMacro with CCodeGenScannerOps {
     override def remap(m: Typ[_]): String =
@@ -308,7 +308,7 @@ class DDLDriver(plugin: DDLoader, loadFile: String, mmapFlag: Boolean, benchFlag
     } else {
       readFile _
     }
-    plugin.HDFSExec(paths, readFunc.asInstanceOf[(plugin.Rep[Int], plugin.Rep[plugin.LongArray[Char]], plugin.Rep[Long]) => plugin.RepArray[Char]], benchFlag, printFlag)
+    plugin.HDFSExec(paths, readFunc.asInstanceOf[(plugin.Rep[Int], plugin.Rep[plugin.LongArray[Char]], plugin.Rep[Long]) => plugin.RepArray[Char]], benchFlag, printFlag, nproc)
   }
 
   def emitMyCode(writeFile: String) = {

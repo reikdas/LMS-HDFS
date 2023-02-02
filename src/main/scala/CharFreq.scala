@@ -5,7 +5,7 @@ import lms.core.virtualize
 @virtualize
 class CharFreqOps extends DDLoader {
 
-  def HDFSExec(paths: Rep[Array[String]], readFunc: (Rep[Int], Rep[LongArray[Char]], Rep[Long]) => RepArray[Char], benchFlag: Boolean = false, printFlag: Boolean = true) = {
+  def HDFSExec(paths: Rep[Array[String]], readFunc: (Rep[Int], Rep[LongArray[Char]], Rep[Long]) => RepArray[Char], benchFlag: Boolean = false, printFlag: Boolean = true, nproc: Boolean = true) = {
     // MPI initialize
     var world_size = 0
     var rank = 0
@@ -84,7 +84,7 @@ object CharFreq extends ArgParser {
     } else {
       false
     }
-    val driver = new DDLDriver(ops, loadFile, mmapFlag, benchFlag, printFlag) {}
+    val driver = new DDLDriver(ops, loadFile, mmapFlag, benchFlag, printFlag, true) {}
     driver.emitMyCode(writeFile)
   }
 }

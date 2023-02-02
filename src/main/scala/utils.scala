@@ -11,6 +11,7 @@ trait ArgParser extends FileOps {
       case (options, "--bench") => options + ("bench" -> true)
       case (options, "--print") => options + ("print" -> true)
       case (options, "--mmap") => options + ("mmap" -> true)
+      case (options, "--multiproc") => options + ("multiproc" -> true)
     }
 
     options

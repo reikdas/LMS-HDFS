@@ -4,7 +4,7 @@ import lms.core.virtualize
 
 @virtualize
 class WordCountOps extends DDLoader {
-  override def HDFSExec(paths: Rep[Array[String]], readFunc: (Rep[Int], Rep[LongArray[Char]], Rep[Long]) => RepArray[Char], benchFlag: Boolean, printFlag: Boolean) = {
+  override def HDFSExec(paths: Rep[Array[String]], readFunc: (Rep[Int], Rep[LongArray[Char]], Rep[Long]) => RepArray[Char], benchFlag: Boolean, printFlag: Boolean, nproc: Boolean = true) = {
     // MPI initialize
     var world_size = 0
     var world_rank = 0
@@ -222,7 +222,7 @@ object WordCount extends ArgParser {
     } else {
       false
     }
-    val driver = new DDLDriver(ops, loadFile, mmapFlag, benchFlag, printFlag) {}
+    val driver = new DDLDriver(ops, loadFile, mmapFlag, benchFlag, printFlag, true) {}
     driver.emitMyCode(writeFile)
   }
 }
