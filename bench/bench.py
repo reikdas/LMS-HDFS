@@ -43,7 +43,7 @@ if __name__ == "__main__":
                         # if scalaclass == "WordCount" and value == 16:
                         #     execcmd = "mpirun -np 16 --mca btl ^openib --bind-to core --cpu-list 0,3,12,14,24,26,36,38,48,50,60,62,72,74,84,86 benchmmap 0"
                         # else:
-                        execcmd = "mpirun -np {0} --mca btl ^openib -map-by numa --bind-to core benchmmap 0".format(value)
+                        execcmd = "mpirun -np {0} --mca btl ^openib --map-by numa --bind-to core benchmmap 0".format(value)
                     # subprocess.run(shlex.split(execcmd), cwd=lmshdfs_path) # Get the program in cache
                     for i in range(5):
                         print("{0}th run".format(i),end="")
