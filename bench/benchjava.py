@@ -23,15 +23,13 @@ if __name__ == "__main__":
             for filename in filenames:
                 f.write(filename)
                 print("For {0}".format(filename))
-                times = []
+                subprocess.run(shlex.split("hadoop jar bench.jar HDFS{0} /{1}".format(scalaclass, filename)), capture_output=True)
                 for i in range(5):
                     print("{0}th run".format(i), end="")
-                    subprocess.run("/usr/local/sbin/dropcaches", shell=True)
-                    time.sleep(120)
+                    # subprocess.run("/usr/local/sbin/dropcaches", shell=True)
+                    # time.sleep(120)
                     output = subprocess.run(shlex.split("hadoop jar bench.jar HDFS{0} /{1}".format(scalaclass, filename)), capture_output=True)
                     output = output.stdout.decode("utf-8").split("\n")[0]
-                    times.append(float(output))
                     print(" = " + output)
-                print(str(mean(times)))
-                f.write("," + str(mean(times)))
+                    f.write("," + output)
                 f.write("\n")
