@@ -21,7 +21,6 @@ if __name__ == "__main__":
             for filename in filenames:
                 f.write(filename)
                 print("For {0}".format(filename))
-                times = []
                 for i in range(5):
                     print("{0}th run".format(i), end="")
                     subprocess.run("/usr/local/sbin/dropcaches", shell=True)
@@ -29,7 +28,5 @@ if __name__ == "__main__":
                     output = subprocess.run(shlex.split("./benchcanon{0}mmap /scratch1/das160/{1}".format(scalaclass, filename)), capture_output=True)
                     output = output.stdout.decode("utf-8").split("\n")[0]
                     print("= {0}".format(output))
-                    times.append(float(output))
-                print(str(mean(times)))
-                f.write("," + str(mean(times)))
+                    f.write(","+str(output))
                 f.write("\n")
