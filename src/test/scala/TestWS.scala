@@ -18,7 +18,7 @@ class TestWS extends FunSuite with Utils {
 
   test("Whitespace 1G: num_blocks = num_procs") {
     val outcodepath = "src/test/resources/testws.c"
-    val driver = new DDLDriver(ops, "/1G.txt", true, benchFlag, printFlag) {}
+    val driver = new DDLDriver(ops, "/1G.txt", true, benchFlag, printFlag, true) {}
     driver.emitMyCode(outcodepath)
     val filesToDelete = new ListBuffer[String]()
     filesToDelete += execname
@@ -36,7 +36,7 @@ class TestWS extends FunSuite with Utils {
 
   test("Whitespace 1G: num_blocks/2 = num_procs") {
     val outcodepath = "src/test/resources/testws.c"
-    val driver = new DDLDriver(ops, "/1G.txt", true, benchFlag, printFlag) {}
+    val driver = new DDLDriver(ops, "/1G.txt", true, benchFlag, printFlag, true) {}
     driver.emitMyCode(outcodepath)
     val filesToDelete = new ListBuffer[String]()
     filesToDelete += execname
@@ -54,7 +54,7 @@ class TestWS extends FunSuite with Utils {
 
   test("Whitespace 1G: num_blocks%num_procs != 0") {
     val outcodepath = "src/test/resources/testws.c"
-    val driver = new DDLDriver(ops, "/1G.txt", true, benchFlag, printFlag) {}
+    val driver = new DDLDriver(ops, "/1G.txt", true, benchFlag, printFlag, true) {}
     driver.emitMyCode(outcodepath)
     val filesToDelete = new ListBuffer[String]()
     filesToDelete += execname
@@ -72,7 +72,7 @@ class TestWS extends FunSuite with Utils {
 
   test("Whitespace 1G: num_procs == 1") {
     val outcodepath = "src/test/resources/testws.c"
-    val driver = new DDLDriver(ops, "/1G.txt", true, benchFlag, printFlag) {}
+    val driver = new DDLDriver(ops, "/1G.txt", true, benchFlag, printFlag, true) {}
     driver.emitMyCode(outcodepath)
     val filesToDelete = new ListBuffer[String]()
     filesToDelete += execname
