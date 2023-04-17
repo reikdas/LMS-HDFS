@@ -19,7 +19,7 @@ class TestWC extends FunSuite with Utils {
 
   test("Wordcount 1G: num_blocks = num_procs") {
     val outcodepath = "src/test/resources/testwc.c"
-    val driver = new DDLDriver(ops, "/1G.txt", true, benchFlag, printFlag) {}
+    val driver = new DDLDriver(ops, "/1G.txt", true, benchFlag, printFlag, true) {}
     driver.emitMyCode(outcodepath)
     val filesToDelete = new ListBuffer[String]()
     filesToDelete += execname
@@ -38,7 +38,7 @@ class TestWC extends FunSuite with Utils {
 
   test("Wordcount 1G: num_blocks/2 = num_procs") {
     val outcodepath = "src/test/resources/testwc.c"
-    val driver = new DDLDriver(ops, "/1G.txt", true, benchFlag, printFlag) {}
+    val driver = new DDLDriver(ops, "/1G.txt", true, benchFlag, printFlag, true) {}
     driver.emitMyCode(outcodepath)
     val filesToDelete = new ListBuffer[String]()
     filesToDelete += execname
@@ -57,7 +57,7 @@ class TestWC extends FunSuite with Utils {
 
   test("Wordcount 1G: num_blocks%num_procs != 0") {
     val outcodepath = "src/test/resources/testwc.c"
-    val driver = new DDLDriver(ops, "/1G.txt", true, benchFlag, printFlag) {}
+    val driver = new DDLDriver(ops, "/1G.txt", true, benchFlag, printFlag, true) {}
     driver.emitMyCode(outcodepath)
     val filesToDelete = new ListBuffer[String]()
     filesToDelete += execname
@@ -76,7 +76,7 @@ class TestWC extends FunSuite with Utils {
 
   test("Wordcount 1G: num_procs == 1") {
     val outcodepath = "src/test/resources/testwc.c"
-    val driver = new DDLDriver(ops, "/1G.txt", true, benchFlag, printFlag) {}
+    val driver = new DDLDriver(ops, "/1G.txt", true, benchFlag, printFlag, true) {}
     driver.emitMyCode(outcodepath)
     val filesToDelete = new ListBuffer[String]()
     filesToDelete += execname
@@ -95,7 +95,7 @@ class TestWC extends FunSuite with Utils {
 
   test("Wordcount 1G: read") {
     val outcodepath = "src/test/resources/testwc.c"
-    val driver = new DDLDriver(ops, "/1G.txt", false, benchFlag, printFlag) {}
+    val driver = new DDLDriver(ops, "/1G.txt", false, benchFlag, printFlag, true) {}
     driver.emitMyCode(outcodepath)
     val filesToDelete = new ListBuffer[String]()
     filesToDelete += execname
@@ -114,7 +114,7 @@ class TestWC extends FunSuite with Utils {
 
   test("Wordcount 1G Word split at boundary: num_blocks = num_procs") {
     val outcodepath = "src/test/resources/testwc.c"
-    val driver = new DDLDriver(ops, "/text.txt", true, benchFlag, printFlag) {}
+    val driver = new DDLDriver(ops, "/text.txt", true, benchFlag, printFlag, true) {}
     driver.emitMyCode(outcodepath)
     val filesToDelete = new ListBuffer[String]()
     filesToDelete += execname
@@ -133,7 +133,7 @@ class TestWC extends FunSuite with Utils {
 
   test("Wordcount 1G Word split at boundary: num_blocks/2 = num_procs") {
     val outcodepath = "src/test/resources/testwc.c"
-    val driver = new DDLDriver(ops, "/text.txt", true, benchFlag, printFlag) {}
+    val driver = new DDLDriver(ops, "/text.txt", true, benchFlag, printFlag, true) {}
     driver.emitMyCode(outcodepath)
     val filesToDelete = new ListBuffer[String]()
     filesToDelete += execname
@@ -152,7 +152,7 @@ class TestWC extends FunSuite with Utils {
 
   test("Wordcount 1G Word split at boundary: num_blocks%num_procs != 0") {
     val outcodepath = "src/test/resources/testwc.c"
-    val driver = new DDLDriver(ops, "/text.txt", true, benchFlag, printFlag) {}
+    val driver = new DDLDriver(ops, "/text.txt", true, benchFlag, printFlag, true) {}
     driver.emitMyCode(outcodepath)
     val filesToDelete = new ListBuffer[String]()
     filesToDelete += execname
@@ -171,7 +171,7 @@ class TestWC extends FunSuite with Utils {
 
   test("Wordcount 1G Word split at boundary: num_blocks == 1") {
     val outcodepath = "src/test/resources/testwc.c"
-    val driver = new DDLDriver(ops, "/text.txt", true, benchFlag, printFlag) {}
+    val driver = new DDLDriver(ops, "/text.txt", true, benchFlag, printFlag, true) {}
     driver.emitMyCode(outcodepath)
     val filesToDelete = new ListBuffer[String]()
     filesToDelete += execname
