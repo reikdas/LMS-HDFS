@@ -196,8 +196,11 @@ trait LMSMore extends ArrayOps with LibFunction with ScannerOps {
 
 trait HDFSOps extends LMSMore {
   def GetPaths(path: String) = {
-    val basepath =
+    var basepath =
       "hdfs getconf -confKey dfs.datanode.data.dir".!!.replaceAll("\n", "")
+    if (basepath.startsWith("file://")) {
+      basepath = basepath.slice("file://".length(), basepath.length())
+    }
     val result = "hdfs fsck %s -files -blocks -locations".format(path)
     val output = result.!!
     val lines = output.split("\n")
