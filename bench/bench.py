@@ -38,7 +38,7 @@ if __name__ == "__main__":
                         subprocess.run(shlex.split("gcc -O3 benchmmap.c {0} -I {1} -o benchmmap".format(includeFlags, mpi_path)), cwd=lmshdfs_path)
                         execcmd = "./benchmmap 0"
                     else:
-                        subprocess.run(shlex.split("sbt \"runMain {0} --loadFile={1} --writeFile=benchmmap.c --bench --mmap --multiproc\"".format(scalaclass, key)), cwd=lmshdfs_path)
+                        subprocess.run(shlex.split("sbt \"runMain {0} --loadFile={1} --writeFile=benchmmap.c --bench --mmap --multiproc --print\"".format(scalaclass, key)), cwd=lmshdfs_path)
                         subprocess.run(shlex.split("mpicc -O3 benchmmap.c {0} -o benchmmap".format(includeFlags)), cwd=lmshdfs_path)
                         # if scalaclass == "WordCount" and value == 16:
                         #     execcmd = "mpirun -np 16 --mca btl ^openib --bind-to core --cpu-list 0,3,12,14,24,26,36,38,48,50,60,62,72,74,84,86 benchmmap 0"
@@ -56,8 +56,9 @@ if __name__ == "__main__":
                             line = output.split("\n")[0]
                             times.append(float(find_between(line, "spent", "time").strip()))
                         else:
-                            for line in output.split("\n")[:-1]:
-                                times.append(float(find_between(line, "spent", "time").strip()))
+                            for line in output.split("\n"):
+                                if ("Proc" in line and "spent" in line and "time." in line):
+                                    times.append(float(find_between(line, "spent", "time").strip()))
                         print(" = ", max(times))
                         f.write("," + str(max(times)))
                     f.write("\n")

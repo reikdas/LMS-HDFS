@@ -27,7 +27,7 @@ class WhitespaceOps extends DDLoader {
           // Get buffer of chars from file
           val block_num = open(paths(i))
           val size = filelen(block_num)
-          val fpointer = mmapFile(block_num, buf, size)
+          val fpointer = readFunc(block_num, buf, size)
 
           for (j <- 0 until fpointer.length) {
             if (fpointer(j) == ' ') {
@@ -37,8 +37,11 @@ class WhitespaceOps extends DDLoader {
           close(block_num)
         }
       }
+      val tmp: Rep[Long] = readVar(count)
+      var msg_count: Var[Long] = var_new(tmp)
+      Adapter.g.reflectWrite("printflag", Unwrap(msg_count))(Adapter.CTRL)
       val total_count: Var[Long] = var_new(0L)
-      mpi_reduce(count, total_count, 1, mpi_long, mpi_sum, 0, mpi_comm_world)
+      mpi_reduce(msg_count, total_count, 1, mpi_long, mpi_sum, 0, mpi_comm_world)
       if (benchFlag) {
         val end = timestamp
         Adapter.g.reflectWrite("printflag", Unwrap(end))(Adapter.CTRL)
