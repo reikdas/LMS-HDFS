@@ -18,7 +18,7 @@ class CharFreqOps extends DDLoader {
       mpi_comm_rank(mpi_comm_world, rank)
     }
 
-    val buf = NewLongArray[Char](GetBlockLen() + 1, Some(0)) // Buffer to hold characters in file
+    val buf = NewLongArray[Char](getBlockLen() + 1, Some(0)) // Buffer to hold characters in file
     val arr = NewArray0[Long](26)
 
     if (nproc) {

@@ -18,25 +18,25 @@ class WordCountOps extends DDLoader {
       mpi_comm_rank(mpi_comm_world, world_rank)
     }
 
-    val buf = NewLongArray[Char](GetBlockLen() + 1, Some(0)) // Underlying buffer for readFile
+    val buf = NewLongArray[Char](getBlockLen() + 1, Some(0)) // Underlying buffer for readFile
     val idxmap = ht_create()
-    val word = NewLongArray[Char](GetBlockLen())
+    val word = NewLongArray[Char](getBlockLen())
     var total_len = 0
     var word_count = 0
     var block_num2: Var[Int] = 0
     var nextIsSplit: Var[Boolean] = false
-    var tmpbuf4 = NewLongArray[Char](GetBlockLen() * 2, Some(0)) // Temporary combined buffer
-    val buf2 = NewLongArray[Char](GetBlockLen() + 1, Some(0)) // Buffer to hold characters from second file (only ReadFile)
+    var tmpbuf4 = NewLongArray[Char](getBlockLen() * 2, Some(0)) // Temporary combined buffer
+    val buf2 = NewLongArray[Char](getBlockLen() + 1, Some(0)) // Buffer to hold characters from second file (only ReadFile)
 
     if (nproc) {
       val blocks_per_proc = (paths.length + world_size - 1) / world_size // Ceil of paths.length/world_size
-      val allwords = NewLongArray[Char](GetBlockLen() * blocks_per_proc, Some(0))
+      val allwords = NewLongArray[Char](getBlockLen() * blocks_per_proc, Some(0))
       // There can be atmost (block_len/2) + 1 words in a block
-      val allvals = NewLongArray[Int](GetBlockLen() * blocks_per_proc / 2)
+      val allvals = NewLongArray[Int](getBlockLen() * blocks_per_proc / 2)
 
       // New variables for handling split words
 
-      val buf3 = NewLongArray[Char](GetBlockLen() + 1, Some(0)) // Buffer to hold characters from next process
+      val buf3 = NewLongArray[Char](getBlockLen() + 1, Some(0)) // Buffer to hold characters from next process
 
 
       val last_working_proc = (paths.length / blocks_per_proc) - 1
@@ -49,7 +49,7 @@ class WordCountOps extends DDLoader {
             open(paths(idx))
           }
 
-          val fpointer: RepArray[Char] = readFunc(block_num, buf, filelen(block_num)) // Do I need to open file if already open?
+          val fpointer: RepArray[Char] = mmapFilewc(block_num, buf, filelen(block_num)) // Do I need to open file if already open?
           var start: Var[Long] = 0L
 
           if (i == 0 && world_rank != 0) {
@@ -90,7 +90,7 @@ class WordCountOps extends DDLoader {
               var len: Var[Long] = end - start - off
               if (nextIsSplit == true) {
                 block_num2 = open(paths(idx + 1))
-                val fpointer2 = readFunc(block_num2, buf2, filelen(block_num2))
+                val fpointer2 = mmapFilewc(block_num2, buf2, filelen(block_num2))
                 var newstart: Var[Long] = 0L
                 while ((newstart < fpointer2.length) && !isspace(fpointer2(newstart))) newstart = newstart + 1L
                 len = len + newstart
@@ -209,7 +209,7 @@ class WordCountOps extends DDLoader {
           open(paths(idx))
         }
 
-        val fpointer: RepArray[Char] = readFunc(block_num, buf, filelen(block_num)) // Do I need to open file if already open?
+        val fpointer: RepArray[Char] = mmapFilewc(block_num, buf, filelen(block_num)) // Do I need to open file if already open?
         var start: Var[Long] = 0L
 
         if (nextIsSplit == true) { // If first word is a split word, skip it
@@ -236,7 +236,7 @@ class WordCountOps extends DDLoader {
             var len: Var[Long] = end - start - off
             if (nextIsSplit == true) {
               block_num2 = open(paths(idx + 1))
-              val fpointer2 = readFunc(block_num2, buf2, filelen(block_num2))
+              val fpointer2 = mmapFilewc(block_num2, buf2, filelen(block_num2))
               var newstart: Var[Long] = 0L
               while ((newstart < fpointer2.length) && !isspace(fpointer2(newstart))) newstart = newstart + 1L
               len = len + newstart

@@ -9,15 +9,15 @@ class WhitespaceOps extends DDLoader {
     // MPI initialize
     var world_size = 0
     var world_rank = 0
-
     val start = timestamp
     Adapter.g.reflectWrite("printflag", Unwrap(start))(Adapter.CTRL)
+    
     if (nproc) {
       mpi_init()
       mpi_comm_size(mpi_comm_world, world_size)
       mpi_comm_rank(mpi_comm_world, world_rank)
     }
-    val buf = NewLongArray[Char](GetBlockLen() + 1, Some(0)) // Buffer to hold characters in file
+    val buf = NewLongArray[Char](getBlockLen() + 1, Some(0)) // Buffer to hold characters in file
 
     if (nproc) {
       var count = 0L
@@ -27,7 +27,7 @@ class WhitespaceOps extends DDLoader {
           // Get buffer of chars from file
           val block_num = open(paths(i))
           val size = filelen(block_num)
-          val fpointer = readFunc(block_num, buf, size)
+          val fpointer = mmapFile(block_num, buf, size)
 
           for (j <- 0 until fpointer.length) {
             if (fpointer(j) == ' ') {
@@ -35,6 +35,7 @@ class WhitespaceOps extends DDLoader {
             }
           }
           close(block_num)
+          // munmap(fpointer.value, size)
         }
       }
       val tmp: Rep[Long] = readVar(count)
@@ -68,6 +69,7 @@ class WhitespaceOps extends DDLoader {
           }
         }
         close(block_num)
+        // munmap(fpointer.value, size)
       }
       if (benchFlag) {
         val end = timestamp

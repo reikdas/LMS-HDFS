@@ -19,6 +19,11 @@ trait FileOps extends LMSMore {
     val newbuf = mmap2[Char](fd, size)
     RepArray[Char](newbuf, size.toInt)
   }
+
+  def mmapFilewc(fd: Rep[Int], buf: Rep[LongArray[Char]], size: Rep[Long]): RepArray[Char] = {
+    val newbuf = mmap3[Char](fd, size)
+    RepArray[Char](newbuf, size.toInt)
+  }
 }
 
 @virtualize
@@ -154,7 +159,14 @@ trait LMSMore extends ArrayOps with LibFunction with ScannerOps {
   def `null`[T: Manifest]: Rep[T] = Wrap[T](Backend.Const(null))
 
   def mmap2[T: Manifest](fd: Rep[Int], len: Rep[Long]) = (libFunction[LongArray[T]]("mmap",
+    lms.core.Backend.Const(0), Unwrap(len), Unwrap(cmacro[Int]("PROT_READ, MAP_FILE|MAP_SHARED")), Unwrap(fd), lms.core.Backend.Const(0))(Seq[Int](), Seq[Int](), Set[Int]()))
+
+  def mmap3[T: Manifest](fd: Rep[Int], len: Rep[Long]) = (libFunction[LongArray[T]]("mmap",
     lms.core.Backend.Const(0), Unwrap(len), Unwrap(prot), Unwrap(fd), lms.core.Backend.Const(0))(Seq[Int](), Seq[Int](), Set[Int]()))
+
+  def munmap(addr: Rep[LongArray[Char]], size: Rep[Long]) = {
+    unchecked[Unit]("munmap(", addr, ",", size,")")
+  }
 
   def memcpy2[T: Manifest](destination: Rep[LongArray[T]], source: Rep[LongArray[T]], num: Rep[Long]) = {
     val desteffectkey = destination match {
@@ -271,7 +283,7 @@ trait HDFSOps extends LMSMore {
     ListToArr(nativepaths)
   }
 
-  def GetBlockLen(): Long = {
+  def getBlockLen(): Long = {
     val output = "hdfs getconf -confKey dfs.blocksize".!!
     output.replace("\n", "").toLong
   }
