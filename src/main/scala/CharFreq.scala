@@ -10,14 +10,18 @@ class CharFreqOps extends DDLoader {
     var world_size = 0
     var rank = 0
 
-    val start = timestamp
-    Adapter.g.reflectWrite("printflag", Unwrap(start))(Adapter.CTRL)
+    
     if (nproc) {
       mpi_init()
       mpi_comm_size(mpi_comm_world, world_size)
       mpi_comm_rank(mpi_comm_world, rank)
+      var send: Var[Long] = var_new(1L)
+      var rec: Var[Long] = var_new(0L)
+      mpi_reduce3(send, rec, 1, mpi_long, mpi_sum, 0, mpi_comm_world)
     }
 
+    val start = timestamp
+    Adapter.g.reflectWrite("printflag", Unwrap(start))(Adapter.CTRL)
     val buf = NewLongArray[Char](getBlockLen() + 1, Some(0)) // Buffer to hold characters in file
     val arr = NewArray0[Long](26)
 
@@ -37,6 +41,7 @@ class CharFreqOps extends DDLoader {
               arr(c - 97) += 1
             }
           }
+          munmap(fpointer.value, size)
           close(block_num)
         }
       }
@@ -71,6 +76,7 @@ class CharFreqOps extends DDLoader {
             arr(c - 97) += 1
           }
         }
+        munmap(fpointer.value, size)
         close(block_num)
       }
       if (benchFlag) {

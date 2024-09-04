@@ -9,14 +9,17 @@ class WordCountOps extends DDLoader {
     var world_size = 0
     var world_rank = 0
 
-    val start = timestamp
-    Adapter.g.reflectWrite("printflag", Unwrap(start))(Adapter.CTRL)
-
     if (nproc) {
       mpi_init()
       mpi_comm_size(mpi_comm_world, world_size)
       mpi_comm_rank(mpi_comm_world, world_rank)
+      var send: Var[Long] = var_new(1L)
+      var rec: Var[Long] = var_new(0L)
+      mpi_reduce3(send, rec, 1, mpi_long, mpi_sum, 0, mpi_comm_world)
     }
+
+    val start = timestamp
+    Adapter.g.reflectWrite("printflag", Unwrap(start))(Adapter.CTRL)
 
     val buf = NewLongArray[Char](getBlockLen() + 1, Some(0)) // Underlying buffer for readFile
     val idxmap = ht_create()
@@ -125,6 +128,7 @@ class WordCountOps extends DDLoader {
               start = end
             }
           }
+          munmap(fpointer.value, filelen(block_num))
           close(block_num)
         }
       }
@@ -172,6 +176,11 @@ class WordCountOps extends DDLoader {
           word_idx = word_idx + 1L
           counter = counter + len + 1L
         }
+        if (benchFlag) {
+          val end = timestamp
+          Adapter.g.reflectWrite("printflag", Unwrap(end))(Adapter.CTRL)
+          printf("Proc %d spent %ld time.\n", world_rank, end - start)
+        }
         val it = ht_iterator(hmap)
         if (printFlag) {
           while (ht_next(it)) {
@@ -181,11 +190,6 @@ class WordCountOps extends DDLoader {
           Adapter.g.reflectWrite("printflag", Unwrap(it))(Adapter.CTRL)
         }
         ht_destroy(hmap)
-      }
-      if (benchFlag) {
-        val end = timestamp
-        Adapter.g.reflectWrite("printflag", Unwrap(end))(Adapter.CTRL)
-        printf("Proc %d spent %ld time.\n", world_rank, end - start)
       }
       fullarr.free
       fullvalarr.free
@@ -266,6 +270,7 @@ class WordCountOps extends DDLoader {
             start = end
           }
         }
+        munmap(fpointer.value, filelen(block_num))
         close(block_num)
       }
       if (benchFlag) {
